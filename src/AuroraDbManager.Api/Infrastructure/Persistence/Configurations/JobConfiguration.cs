@@ -23,6 +23,8 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(j => j.Type).HasColumnName("type").HasMaxLength(32)
             .HasConversion(v => EnumStorage.ToDbValue(v), v => EnumStorage.FromDbValue<JobType>(v));
         // Concurrency token: of two executions that both load a pending job, only one can start it.
+        // Together with the lease id below, every update of a job is conditional on the job still
+        // being in the state, and under the lease, it was loaded with.
         builder.Property(j => j.Status).HasColumnName("status").HasMaxLength(16)
             .HasConversion(v => EnumStorage.ToDbValue(v), v => EnumStorage.FromDbValue<JobStatus>(v))
             .IsConcurrencyToken();
@@ -35,6 +37,9 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(j => j.StartedAt).HasColumnName("started_at");
         builder.Property(j => j.CompletedAt).HasColumnName("completed_at");
         builder.Property(j => j.UpdatedAt).HasColumnName("updated_at");
+        // Concurrency token: an execution whose lease was taken over can no longer update the job.
+        builder.Property(j => j.LeaseId).HasColumnName("lease_id").IsConcurrencyToken();
+        builder.Property(j => j.LeaseExpiresAt).HasColumnName("lease_expires_at");
 
         builder.Ignore(j => j.HasAttemptsRemaining);
 
@@ -47,5 +52,11 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
 
         builder.HasIndex(j => j.InstanceId).HasDatabaseName("ix_jobs_instance_id");
         builder.HasIndex(j => j.Status).HasDatabaseName("ix_jobs_status");
+
+        // An instance has at most one unfinished job of a type, however many processes try to create one.
+        builder.HasIndex(j => new { j.InstanceId, j.Type })
+            .IsUnique()
+            .HasFilter($"status IN ('{EnumStorage.ToDbValue(JobStatus.Pending)}', '{EnumStorage.ToDbValue(JobStatus.Running)}')")
+            .HasDatabaseName("ux_jobs_instance_id_type_unfinished");
     }
 }

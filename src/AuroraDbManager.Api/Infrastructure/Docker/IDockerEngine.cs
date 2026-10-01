@@ -27,6 +27,12 @@ public interface IDockerEngine
 
     Task CreateContainerAsync(DockerContainerSpec spec, CancellationToken cancellationToken);
 
+    /// <summary>Lists all containers, running or not, that carry the label.</summary>
+    Task<IReadOnlyList<DockerLabelledResource>> ListContainersAsync(string label, string value, CancellationToken cancellationToken);
+
+    /// <summary>Lists all volumes that carry the label.</summary>
+    Task<IReadOnlyList<DockerLabelledResource>> ListVolumesAsync(string label, string value, CancellationToken cancellationToken);
+
     Task StartContainerAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>Stops and removes the container; named volumes are kept. Does nothing if it does not exist.</summary>
@@ -37,6 +43,8 @@ public interface IDockerEngine
 }
 
 public sealed record DockerVolume(string Name, IReadOnlyDictionary<string, string> Labels);
+
+public sealed record DockerLabelledResource(string Name, IReadOnlyDictionary<string, string> Labels);
 
 public sealed record DockerContainer(
     string Name,

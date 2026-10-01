@@ -106,6 +106,24 @@ public sealed class FakeDockerEngine : IDockerEngine
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<DockerLabelledResource>> ListContainersAsync(string label, string value, CancellationToken cancellationToken)
+    {
+        Record(nameof(ListContainersAsync), label, cancellationToken);
+        return Task.FromResult<IReadOnlyList<DockerLabelledResource>>(Containers.Values
+            .Where(container => container.Labels.GetValueOrDefault(label) == value)
+            .Select(container => new DockerLabelledResource(container.Name, container.Labels))
+            .ToList());
+    }
+
+    public Task<IReadOnlyList<DockerLabelledResource>> ListVolumesAsync(string label, string value, CancellationToken cancellationToken)
+    {
+        Record(nameof(ListVolumesAsync), label, cancellationToken);
+        return Task.FromResult<IReadOnlyList<DockerLabelledResource>>(Volumes.Values
+            .Where(volume => volume.Labels.GetValueOrDefault(label) == value)
+            .Select(volume => new DockerLabelledResource(volume.Name, volume.Labels))
+            .ToList());
+    }
+
     public Task StartContainerAsync(string name, CancellationToken cancellationToken)
     {
         Record(nameof(StartContainerAsync), name, cancellationToken);

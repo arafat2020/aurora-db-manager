@@ -26,6 +26,10 @@ public static class DockerResourceNaming
         [ManagedLabel] = "true"
     };
 
+    /// <summary>The instance a resource carrying <paramref name="labels"/> was created for, if its label says so.</summary>
+    public static Guid? OwnerOf(IReadOnlyDictionary<string, string> labels) =>
+        labels.TryGetValue(InstanceIdLabel, out var owner) && Guid.TryParse(owner, out var instanceId) ? instanceId : null;
+
     /// <summary>Whether a resource carrying <paramref name="labels"/> was created for this instance.</summary>
     public static bool IsOwnedBy(IReadOnlyDictionary<string, string> labels, Guid instanceId) =>
         labels.TryGetValue(InstanceIdLabel, out var owner)

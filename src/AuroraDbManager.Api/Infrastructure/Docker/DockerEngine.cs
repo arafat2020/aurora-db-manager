@@ -124,6 +124,30 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
                 },
                 cancellationToken));
 
+    public Task<IReadOnlyList<DockerLabelledResource>> ListContainersAsync(string label, string value, CancellationToken cancellationToken) =>
+        InvokeAsync<IReadOnlyList<DockerLabelledResource>>($"list containers labelled {label}", cancellationToken, async () =>
+        {
+            var containers = await Client.Containers.ListContainersAsync(
+                new ContainersListParameters { All = true, Filters = LabelFilter(label, value) },
+                cancellationToken);
+            return containers
+                .Select(container => new DockerLabelledResource(
+                    container.Names.FirstOrDefault()?.TrimStart('/') ?? container.ID,
+                    AsReadOnly(container.Labels)))
+                .ToList();
+        });
+
+    public Task<IReadOnlyList<DockerLabelledResource>> ListVolumesAsync(string label, string value, CancellationToken cancellationToken) =>
+        InvokeAsync<IReadOnlyList<DockerLabelledResource>>($"list volumes labelled {label}", cancellationToken, async () =>
+        {
+            var response = await Client.Volumes.ListAsync(
+                new VolumesListParameters { Filters = LabelFilter(label, value) },
+                cancellationToken);
+            return (response.Volumes ?? [])
+                .Select(volume => new DockerLabelledResource(volume.Name, AsReadOnly(volume.Labels)))
+                .ToList();
+        });
+
     public Task StartContainerAsync(string name, CancellationToken cancellationToken) =>
         InvokeAsync($"start container {name}", cancellationToken, () =>
             Client.Containers.StartContainerAsync(name, new ContainerStartParameters(), cancellationToken));
@@ -169,6 +193,9 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
         "exited" => DockerContainerState.Exited,
         _ => DockerContainerState.Other
     };
+
+    private static Dictionary<string, IDictionary<string, bool>> LabelFilter(string label, string value) =>
+        new() { ["label"] = new Dictionary<string, bool> { [$"{label}={value}"] = true } };
 
     private static IReadOnlyDictionary<string, string> AsReadOnly(IDictionary<string, string>? labels) =>
         labels is null ? new Dictionary<string, string>() : new Dictionary<string, string>(labels);

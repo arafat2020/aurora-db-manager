@@ -10,6 +10,9 @@ namespace AuroraDbManager.Api.Tests;
 /// </summary>
 public sealed class JobProcessingTests : IDisposable
 {
+    // A job held in the provisioner must end the way the test expects; if it does not, fail rather than hang.
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+
     private readonly ApiFactory _factory = new();
     private readonly HttpClient _client;
 
@@ -63,7 +66,7 @@ public sealed class JobProcessingTests : IDisposable
         Assert.Equal("provisioning", (await _client.GetInstanceAsync(instanceId)).Status());
 
         Provisioner.Release();
-        await processing;
+        await processing.WaitAsync(TestTimeout);
     }
 
     [Fact]
@@ -176,7 +179,7 @@ public sealed class JobProcessingTests : IDisposable
 
         Assert.Equal(1, Provisioner.CallCount);
         Provisioner.Release();
-        await first;
+        await first.WaitAsync(TestTimeout);
         Assert.Equal("completed", (await _client.GetJobAsync(jobId)).Status());
         Assert.Equal(1, Provisioner.CallCount);
     }
@@ -207,11 +210,11 @@ public sealed class JobProcessingTests : IDisposable
             await _factory.WithDbAsync(async second =>
             {
                 var secondJob = await second.Jobs.SingleAsync(j => j.Id == jobId);
-                secondJob.Start(DateTime.UtcNow);
+                secondJob.Start(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(1), DateTime.UtcNow);
                 return await second.SaveChangesAsync();
             });
 
-            firstJob.Start(DateTime.UtcNow);
+            firstJob.Start(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(1), DateTime.UtcNow);
             await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => first.SaveChangesAsync());
             return 0;
         });
@@ -238,7 +241,7 @@ public sealed class JobProcessingTests : IDisposable
     }
 
     [Fact]
-    public async Task Process_Cancelled_DoesNotCompleteJobOrInstance()
+    public async Task Process_Cancelled_NeitherCompletesNorFailsTheJob_AndReturnsItToPending()
     {
         var (instanceId, jobId) = await _client.CreateInstanceAsync();
         Provisioner.Block();
@@ -248,10 +251,13 @@ public sealed class JobProcessingTests : IDisposable
 
         await cancellation.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processing);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processing.WaitAsync(TestTimeout));
         var job = await _client.GetJobAsync(jobId);
-        Assert.Equal("running", job.Status());
+        Assert.Equal("pending", job.Status());
+        Assert.Equal(0, job.GetProperty("attempt").GetInt32());
         Assert.Null(job.GetProperty("completedAt").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, job.GetProperty("error").ValueKind);
+        Assert.Null((await _factory.GetJobEntityAsync(jobId)).LeaseId);
         Assert.Equal("provisioning", (await _client.GetInstanceAsync(instanceId)).Status());
     }
 
@@ -277,7 +283,7 @@ public sealed class JobProcessingTests : IDisposable
         await DeleteInstanceRowAsync(instanceId);
         Provisioner.Release();
 
-        await processing;
+        await processing.WaitAsync(TestTimeout);
         Assert.Equal(0, await _factory.WithDbAsync(db => db.Jobs.CountAsync()));
     }
 

@@ -45,10 +45,15 @@ builder.Services.AddScoped<InstanceService>();
 builder.Services.AddOptions<JobOptions>()
     .Bind(builder.Configuration.GetSection(JobOptions.SectionName))
     .ValidateDataAnnotations()
+    .Validate(
+        options => options.LeaseRenewalIntervalSeconds < options.LeaseDurationSeconds,
+        "Jobs:LeaseRenewalIntervalSeconds must be less than Jobs:LeaseDurationSeconds.")
     .ValidateOnStart();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddScoped<JobService>();
 builder.Services.AddScoped<JobProcessor>();
+builder.Services.AddScoped<JobRecovery>();
+builder.Services.AddSingleton<InstanceReconciler>();
 builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
 
 builder.Services.AddOptions<DockerOptions>()

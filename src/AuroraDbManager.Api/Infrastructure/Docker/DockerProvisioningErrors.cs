@@ -13,6 +13,7 @@ public static class DockerProvisioningErrors
     public const string DockerContainerStartFailed = "DOCKER_CONTAINER_START_FAILED";
     public const string DockerResourceConflict = "DOCKER_RESOURCE_CONFLICT";
     public const string DockerResourceRemoveFailed = "DOCKER_RESOURCE_REMOVE_FAILED";
+    public const string DatabaseContainerMissing = "DATABASE_CONTAINER_MISSING";
     public const string DatabaseContainerExited = "DATABASE_CONTAINER_EXITED";
     public const string DatabaseReadinessTimeout = "DATABASE_READINESS_TIMEOUT";
 }

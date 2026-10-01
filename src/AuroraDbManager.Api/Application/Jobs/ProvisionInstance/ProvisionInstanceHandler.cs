@@ -70,7 +70,10 @@ public sealed class ProvisionInstanceHandler(
 
         if (instance?.Status == InstanceStatus.Provisioning)
         {
-            instance.MarkFailed(timeProvider.GetUtcNow().UtcDateTime);
+            instance.MarkFailed(
+                job.ErrorCode ?? JobErrorCodes.ProvisioningFailed,
+                job.ErrorMessage ?? "Instance provisioning failed.",
+                timeProvider.GetUtcNow().UtcDateTime);
         }
     }
 }

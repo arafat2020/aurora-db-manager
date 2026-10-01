@@ -13,6 +13,7 @@ namespace AuroraDbManager.Api.Application.Instances;
 /// <param name="StorageGb">Storage in gigabytes.</param>
 /// <param name="CreatedAt">UTC time the instance was created.</param>
 /// <param name="UpdatedAt">UTC time the instance was last changed.</param>
+/// <param name="Error">Why the instance is <c>failed</c>; null in every other status.</param>
 public sealed record InstanceResponse(
     Guid Id,
     string Name,
@@ -23,7 +24,8 @@ public sealed record InstanceResponse(
     int MemoryMb,
     int StorageGb,
     DateTime CreatedAt,
-    DateTime UpdatedAt)
+    DateTime UpdatedAt,
+    InstanceErrorResponse? Error)
 {
     public static InstanceResponse From(Instance instance) => new(
         instance.Id,
@@ -35,8 +37,13 @@ public sealed record InstanceResponse(
         instance.MemoryMb,
         instance.StorageGb,
         instance.CreatedAt,
-        instance.UpdatedAt);
+        instance.UpdatedAt,
+        instance.ErrorCode is null ? null : new InstanceErrorResponse(instance.ErrorCode, instance.ErrorMessage ?? string.Empty));
 }
+
+/// <param name="Code">Stable, machine-readable error code, e.g. <c>DATABASE_READINESS_TIMEOUT</c>.</param>
+/// <param name="Message">Human-readable description of the failure.</param>
+public sealed record InstanceErrorResponse(string Code, string Message);
 
 /// <param name="Items">Instances on the requested page, newest first.</param>
 /// <param name="Page">1-based page number.</param>

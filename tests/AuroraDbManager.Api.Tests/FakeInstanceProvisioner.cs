@@ -26,6 +26,17 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
     /// <summary>When set, <see cref="DeprovisionAsync"/> throws it.</summary>
     public Exception? DeprovisionFailure { get; set; }
 
+    public List<Guid> EnsureRunningInstanceIds { get; } = [];
+
+    /// <summary>When set, <see cref="EnsureRunningAsync"/> throws it.</summary>
+    public Exception? EnsureRunningFailure { get; set; }
+
+    /// <summary>What <see cref="ListResourcesAsync"/> reports.</summary>
+    public List<ProvisionedResource> Resources { get; } = [];
+
+    /// <summary>When set, <see cref="ListResourcesAsync"/> throws it.</summary>
+    public Exception? ListResourcesFailure { get; set; }
+
     public int MaxConcurrentCalls { get; private set; }
 
     public int InFlight => Volatile.Read(ref _inFlight);
@@ -94,6 +105,21 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
             Interlocked.Decrement(ref _inFlight);
         }
     }
+
+    public Task EnsureRunningAsync(Instance instance, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            EnsureRunningInstanceIds.Add(instance.Id);
+        }
+
+        return EnsureRunningFailure is null ? Task.CompletedTask : Task.FromException(EnsureRunningFailure);
+    }
+
+    public Task<IReadOnlyList<ProvisionedResource>> ListResourcesAsync(CancellationToken cancellationToken) =>
+        ListResourcesFailure is null
+            ? Task.FromResult<IReadOnlyList<ProvisionedResource>>(Resources.ToList())
+            : Task.FromException<IReadOnlyList<ProvisionedResource>>(ListResourcesFailure);
 
     public Task DeprovisionAsync(Instance instance, CancellationToken cancellationToken)
     {

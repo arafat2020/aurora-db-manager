@@ -112,6 +112,79 @@ public sealed class DockerInstanceProvisioner(
         }
     }
 
+    /// <summary>
+    /// Recovery of an instance that was provisioned before: its container is expected to exist.
+    /// A stopped container (Docker or the host was restarted) is started and checked for
+    /// readiness. Nothing is created, replaced or removed here, whatever happens.
+    /// </summary>
+    public async Task EnsureRunningAsync(Instance instance, CancellationToken cancellationToken)
+    {
+        var containerName = DockerResourceNaming.ContainerName(instance.Id);
+
+        var container = await DockerAsync(
+            DockerProvisioningErrors.DockerOperationFailed,
+            "Docker could not inspect the instance's container.",
+            () => docker.FindContainerAsync(containerName, cancellationToken));
+
+        if (container is null)
+        {
+            throw new InstanceProvisioningException(
+                DockerProvisioningErrors.DatabaseContainerMissing,
+                "The instance's database container no longer exists.");
+        }
+
+        if (!DockerResourceNaming.IsOwnedBy(container.Labels, instance.Id))
+        {
+            throw new InstanceProvisioningException(
+                DockerProvisioningErrors.DockerResourceConflict,
+                $"Docker container '{containerName}' does not belong to this instance.");
+        }
+
+        if (container.State == DockerContainerState.Running)
+        {
+            logger.LogInformation(
+                "Database container {ContainerName} of instance {InstanceId} is running",
+                containerName, instance.Id);
+            return;
+        }
+
+        if (container.State is not (DockerContainerState.Created or DockerContainerState.Exited))
+        {
+            throw new InstanceProvisioningException(
+                DockerProvisioningErrors.DockerResourceConflict,
+                $"Docker container '{containerName}' is in a state it cannot be started from.");
+        }
+
+        var image = images.Resolve(instance.Engine, instance.Version);
+        EnsureBelongsToInstance(container, instance, image, DockerResourceNaming.VolumeName(instance.Id));
+
+        logger.LogWarning(
+            "Restarting stopped database container {ContainerName} of instance {InstanceId}",
+            containerName, instance.Id);
+        await StartContainerAsync(instance, containerName, cancellationToken);
+        await WaitUntilReadyAsync(instance, containerName, image, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProvisionedResource>> ListResourcesAsync(CancellationToken cancellationToken)
+    {
+        const string failed = "Docker could not list the managed resources.";
+
+        var containers = await DockerAsync(
+            DockerProvisioningErrors.DockerOperationFailed, failed,
+            () => docker.ListContainersAsync(DockerResourceNaming.ManagedLabel, "true", cancellationToken));
+        var volumes = await DockerAsync(
+            DockerProvisioningErrors.DockerOperationFailed, failed,
+            () => docker.ListVolumesAsync(DockerResourceNaming.ManagedLabel, "true", cancellationToken));
+
+        // Only resources with an instance label are instance resources; the shared network has none.
+        return containers.Select(container => (Kind: "container", Resource: container))
+            .Concat(volumes.Select(volume => (Kind: "volume", Resource: volume)))
+            .Where(entry => entry.Resource.Labels.ContainsKey(DockerResourceNaming.InstanceIdLabel))
+            .Select(entry => new ProvisionedResource(
+                entry.Kind, entry.Resource.Name, DockerResourceNaming.OwnerOf(entry.Resource.Labels)))
+            .ToList();
+    }
+
     public async Task DeprovisionAsync(Instance instance, CancellationToken cancellationToken)
     {
         var containerName = DockerResourceNaming.ContainerName(instance.Id);
@@ -381,5 +454,8 @@ public sealed class DockerInstanceProvisioner(
     private static InstanceProvisioningException Translate(DockerEngineException exception, string failureCode, string failureMessage) =>
         exception.Kind == DockerFailure.Unavailable
             ? new InstanceProvisioningException(DockerProvisioningErrors.DockerUnavailable, "Docker is not available.", exception)
+            {
+                ProvisionerUnavailable = true
+            }
             : new InstanceProvisioningException(failureCode, failureMessage, exception);
 }

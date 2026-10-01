@@ -8,7 +8,7 @@ namespace AuroraDbManager.Api.Application.Jobs;
 /// </summary>
 /// <remarks>
 /// The queue lives in memory. Ids that were queued but not yet processed are lost when the
-/// process stops, and nothing re-queues the corresponding jobs on the next start.
+/// process stops; <see cref="JobRecovery"/> queues the corresponding jobs again on the next start.
 /// </remarks>
 public sealed class JobQueue
 {

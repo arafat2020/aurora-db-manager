@@ -9,10 +9,10 @@ namespace AuroraDbManager.Api.Application.Jobs;
 /// <c>running</c> while it retries; <c>failed</c> means all attempts were used.
 /// </param>
 /// <param name="InstanceId">Instance the job works on.</param>
-/// <param name="Attempt">Number of attempts started so far; 0 while pending.</param>
+/// <param name="Attempt">Number of the current attempt; 0 until first picked up. An attempt interrupted by a restart is not counted.</param>
 /// <param name="MaxAttempts">Attempts allowed before the job is marked failed.</param>
 /// <param name="CreatedAt">UTC time the job was created.</param>
-/// <param name="StartedAt">UTC time the first attempt started; null while pending.</param>
+/// <param name="StartedAt">UTC time the first attempt started; null until then.</param>
 /// <param name="CompletedAt">UTC time the job reached <c>completed</c> or <c>failed</c>; null until then.</param>
 /// <param name="UpdatedAt">UTC time the job last changed.</param>
 /// <param name="Error">Error of the most recent failed attempt; null if none failed or the job completed.</param>

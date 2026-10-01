@@ -3,12 +3,15 @@ namespace AuroraDbManager.Api.Domain.Instances;
 /// <summary>
 /// Metadata for a managed database instance. A new instance starts in
 /// <see cref="InstanceStatus.Provisioning"/> and leaves it only through
-/// <see cref="MarkRunning"/> or <see cref="MarkFailed"/>.
+/// <see cref="MarkRunning"/> or <see cref="MarkFailed"/>. A running instance whose database
+/// cannot be brought back becomes failed as well. Nothing leaves <see cref="InstanceStatus.Failed"/>.
 /// </summary>
 public sealed class Instance
 {
     public const int NameMaxLength = 100;
     public const int VersionMaxLength = 32;
+    public const int ErrorCodeMaxLength = 64;
+    public const int ErrorMessageMaxLength = 1024;
 
     private Instance()
     {
@@ -24,6 +27,10 @@ public sealed class Instance
     public int StorageGb { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
+
+    /// <summary>Why the instance is <see cref="InstanceStatus.Failed"/>; null otherwise.</summary>
+    public string? ErrorCode { get; private set; }
+    public string? ErrorMessage { get; private set; }
 
     public static Instance Create(
         string name,
@@ -56,20 +63,40 @@ public sealed class Instance
     }
 
     /// <summary><c>provisioning → running</c>; provisioning succeeded.</summary>
-    public void MarkRunning(DateTime utcNow) => CompleteProvisioning(InstanceStatus.Running, utcNow);
-
-    /// <summary><c>provisioning → failed</c>; provisioning failed for good.</summary>
-    public void MarkFailed(DateTime utcNow) => CompleteProvisioning(InstanceStatus.Failed, utcNow);
-
-    private void CompleteProvisioning(InstanceStatus outcome, DateTime utcNow)
+    public void MarkRunning(DateTime utcNow)
     {
-        if (Status != InstanceStatus.Provisioning)
-        {
-            throw new InvalidOperationException(
-                $"Cannot move instance {Id} to {outcome}: status is {Status}, expected {InstanceStatus.Provisioning}.");
-        }
+        EnsureStatus(nameof(MarkRunning), InstanceStatus.Provisioning);
 
-        Status = outcome;
+        Status = InstanceStatus.Running;
         UpdatedAt = utcNow;
     }
+
+    /// <summary>
+    /// <c>provisioning → failed</c> when provisioning failed for good, or <c>running → failed</c>
+    /// when the instance's database could not be brought back. The code and message are shown to
+    /// API clients.
+    /// </summary>
+    public void MarkFailed(string errorCode, string errorMessage, DateTime utcNow)
+    {
+        EnsureStatus(nameof(MarkFailed), InstanceStatus.Provisioning, InstanceStatus.Running);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorMessage);
+
+        Status = InstanceStatus.Failed;
+        ErrorCode = Truncate(errorCode, ErrorCodeMaxLength);
+        ErrorMessage = Truncate(errorMessage, ErrorMessageMaxLength);
+        UpdatedAt = utcNow;
+    }
+
+    private void EnsureStatus(string operation, params InstanceStatus[] allowed)
+    {
+        if (!allowed.Contains(Status))
+        {
+            throw new InvalidOperationException(
+                $"Cannot {operation} instance {Id}: status is {Status}, expected {string.Join(" or ", allowed)}.");
+        }
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 }

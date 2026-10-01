@@ -33,6 +33,8 @@ public sealed class InstanceConfiguration : IEntityTypeConfiguration<Instance>
         builder.Property(i => i.StorageGb).HasColumnName("storage_gb");
         builder.Property(i => i.CreatedAt).HasColumnName("created_at");
         builder.Property(i => i.UpdatedAt).HasColumnName("updated_at");
+        builder.Property(i => i.ErrorCode).HasColumnName("error_code").HasMaxLength(Instance.ErrorCodeMaxLength);
+        builder.Property(i => i.ErrorMessage).HasColumnName("error_message").HasMaxLength(Instance.ErrorMessageMaxLength);
 
         builder.HasIndex(i => i.CreatedAt).HasDatabaseName("ix_instances_created_at");
     }

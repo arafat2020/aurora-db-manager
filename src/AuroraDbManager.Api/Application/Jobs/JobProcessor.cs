@@ -9,19 +9,28 @@ namespace AuroraDbManager.Api.Application.Jobs;
 /// Runs a single job to its end: claims it, executes its handler, retries failed attempts and
 /// records the outcome. Knows nothing about HTTP or about how jobs reach it.
 /// </summary>
+/// <remarks>
+/// The processor owns the job's lease; handlers never see it. Claiming a job stores a new lease
+/// id together with the <c>running</c> status, the lease is extended in the background while the
+/// handler works, and every later update of the job is conditional on that lease id. An execution
+/// that lost its lease therefore cannot complete or fail a job another execution now owns.
+/// </remarks>
 public sealed class JobProcessor(
     AppDbContext db,
     IEnumerable<IJobHandler> handlers,
+    IServiceScopeFactory scopeFactory,
     IOptions<JobOptions> options,
     TimeProvider timeProvider,
     ILogger<JobProcessor> logger)
 {
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
+    private TimeSpan LeaseDuration => TimeSpan.FromSeconds(options.Value.LeaseDurationSeconds);
+
     /// <summary>
     /// Processes the job if it is still pending; otherwise does nothing. If
-    /// <paramref name="cancellationToken"/> is cancelled mid-way the job is left
-    /// <c>running</c>, never marked completed.
+    /// <paramref name="cancellationToken"/> is cancelled mid-way the interrupted attempt is given
+    /// up and the job goes back to <c>pending</c>; it is never marked completed or failed.
     /// </summary>
     public async Task ProcessAsync(Guid jobId, CancellationToken cancellationToken)
     {
@@ -42,24 +51,61 @@ public sealed class JobProcessor(
         }
 
         var handler = handlers.Single(h => h.Type == job.Type);
+        var leaseId = Guid.NewGuid();
 
         try
         {
-            // The status concurrency token makes this the claim: if another execution started
-            // the job first, the save fails and this one backs off.
-            job.Start(UtcNow);
+            // Status and lease are saved in one conditional update: if another execution claimed
+            // the job first, this save fails and this execution backs off.
+            job.Start(leaseId, UtcNow + LeaseDuration, UtcNow);
             await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
             logger.LogInformation(
-                "Job {JobId} ({JobType}) for instance {InstanceId} started",
+                "Job {JobId} ({JobType}) for instance {InstanceId} skipped: another execution claimed it first",
                 job.Id, job.Type, job.InstanceId);
+            return;
+        }
 
-            await RunAttemptsAsync(job, handler, cancellationToken);
+        logger.LogInformation(
+            "Job {JobId} ({JobType}) for instance {InstanceId} started: job lease {LeaseId} acquired",
+            job.Id, job.Type, job.InstanceId, leaseId);
+
+        // Cancelled on shutdown, and also when the lease turns out to be lost.
+        using var execution = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var renewalStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var renewal = RenewLeaseAsync(job, leaseId, execution, renewalStop.Token);
+
+        try
+        {
+            await RunAttemptsAsync(job, handler, execution.Token);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await StopRenewalAsync();
+            await ReleaseInterruptedJobAsync(job, leaseId);
+            throw;
+        }
+        catch (OperationCanceledException) when (execution.IsCancellationRequested)
+        {
+            // The renewal loop found the lease gone and has logged it; the job is someone else's now.
         }
         catch (DbUpdateConcurrencyException)
         {
             logger.LogWarning(
-                "Job {JobId} ({JobType}) for instance {InstanceId} abandoned: the job or its instance was changed or deleted concurrently",
-                job.Id, job.Type, job.InstanceId);
+                "Job {JobId} ({JobType}) for instance {InstanceId} abandoned: job lease {LeaseId} lost, or the job or its instance was changed or deleted concurrently",
+                job.Id, job.Type, job.InstanceId, leaseId);
+        }
+        finally
+        {
+            await StopRenewalAsync();
+        }
+
+        async Task StopRenewalAsync()
+        {
+            await renewalStop.CancelAsync();
+            await renewal;
         }
     }
 
@@ -82,6 +128,7 @@ public sealed class JobProcessor(
                 return;
             }
 
+            var failedAttempt = job.Attempt;
             job.FailAttempt(failure.Code, failure.Message, UtcNow);
 
             if (job.Status == JobStatus.Failed)
@@ -95,18 +142,95 @@ public sealed class JobProcessor(
                 return;
             }
 
+            // The next attempt begins with its wait. Saved together with the failure, so a job
+            // interrupted during the wait is known to have failed this attempt and resumes with
+            // the next one.
+            job.StartNextAttempt(UtcNow);
             await db.SaveChangesAsync(cancellationToken);
 
             var retryDelay = TimeSpan.FromSeconds(options.Value.RetryDelaySeconds);
             logger.LogWarning(
                 failure,
                 "Job {JobId} ({JobType}) for instance {InstanceId} attempt {Attempt}/{MaxAttempts} failed with {ErrorCode}; retry scheduled in {RetryDelaySeconds}s",
-                job.Id, job.Type, job.InstanceId, job.Attempt, job.MaxAttempts, failure.Code, retryDelay.TotalSeconds);
+                job.Id, job.Type, job.InstanceId, failedAttempt, job.MaxAttempts, failure.Code, retryDelay.TotalSeconds);
 
             await Task.Delay(retryDelay, timeProvider, cancellationToken);
+        }
+    }
 
-            job.StartNextAttempt(UtcNow);
-            await db.SaveChangesAsync(cancellationToken);
+    /// <summary>
+    /// Extends the lease at every renewal interval until <paramref name="stop"/> is cancelled. Uses
+    /// its own database context, because the handler is using the processor's. If the lease is no
+    /// longer this execution's, cancels <paramref name="execution"/>.
+    /// </summary>
+    private async Task RenewLeaseAsync(Job job, Guid leaseId, CancellationTokenSource execution, CancellationToken stop)
+    {
+        var interval = TimeSpan.FromSeconds(options.Value.LeaseRenewalIntervalSeconds);
+        var jobId = job.Id;
+
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(interval, timeProvider, stop);
+
+                int renewed;
+                try
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var renewalDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var expiresAt = UtcNow + LeaseDuration;
+                    renewed = await renewalDb.Jobs
+                        .Where(j => j.Id == jobId && j.LeaseId == leaseId && j.Status == JobStatus.Running)
+                        .ExecuteUpdateAsync(update => update.SetProperty(j => j.LeaseExpiresAt, expiresAt), stop);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // Tried again at the next interval; the lease only matters once it has expired.
+                    logger.LogWarning(
+                        exception,
+                        "Job {JobId} ({JobType}) for instance {InstanceId}: job lease {LeaseId} could not be renewed",
+                        jobId, job.Type, job.InstanceId, leaseId);
+                    continue;
+                }
+
+                if (renewed == 0)
+                {
+                    logger.LogWarning(
+                        "Job {JobId} ({JobType}) for instance {InstanceId}: job lease {LeaseId} lost; stopping this execution",
+                        jobId, job.Type, job.InstanceId, leaseId);
+                    await execution.CancelAsync();
+                    return;
+                }
+
+                logger.LogDebug(
+                    "Job {JobId} ({JobType}) for instance {InstanceId}: job lease {LeaseId} renewed",
+                    jobId, job.Type, job.InstanceId, leaseId);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// On shutdown, hands the job back right away instead of leaving it to lease expiry. Not
+    /// cancellable, and done in a fresh scope because this one's context was interrupted mid-work.
+    /// </summary>
+    private async Task ReleaseInterruptedJobAsync(Job job, Guid leaseId)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<JobRecovery>().ReleaseAsync(job.Id, leaseId);
+        }
+        catch (Exception exception)
+        {
+            // The job stays running; it is recovered once its lease has expired.
+            logger.LogWarning(
+                exception,
+                "Job {JobId} ({JobType}) for instance {InstanceId}: interrupted job could not be released from job lease {LeaseId}",
+                job.Id, job.Type, job.InstanceId, leaseId);
         }
     }
 

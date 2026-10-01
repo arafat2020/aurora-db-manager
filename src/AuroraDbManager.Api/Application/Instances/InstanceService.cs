@@ -35,8 +35,8 @@ public sealed class InstanceService(
         await db.SaveChangesAsync(cancellationToken);
 
         // Queued only after the commit, so the worker never sees a job that is not in the database.
-        // If the process dies between the commit and this line the job stays pending and is never
-        // picked up; nothing re-queues it yet. Not cancellable: the job is already committed.
+        // If the process dies between the commit and this line the job stays pending until the
+        // next start, when job recovery queues it. Not cancellable: the job is already committed.
         await jobQueue.EnqueueAsync(job.Id, CancellationToken.None);
         logger.LogInformation(
             "Job {JobId} ({JobType}) for instance {InstanceId} queued",

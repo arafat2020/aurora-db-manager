@@ -1,0 +1,77 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using AuroraDbManager.Api.Application.Instances;
+using AuroraDbManager.Api.Application.Jobs;
+using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
+using AuroraDbManager.Api.Errors;
+using AuroraDbManager.Api.Infrastructure.Persistence;
+using AuroraDbManager.Api.Infrastructure.Provisioning;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+
+builder.Services
+    .AddControllers(options =>
+    {
+        // Report validation errors under JSON property names ("memoryMb") rather than CLR names.
+        options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
+    })
+    .AddJsonOptions(options => ConfigureJson(options.JsonSerializerOptions))
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = ErrorHandling.ValidationFailed;
+        // Leave bodiless 4xx results (e.g. 415) to the status code pages below instead of ProblemDetails.
+        options.SuppressMapClientErrors = true;
+    });
+
+// The OpenAPI document and non-MVC responses read these options rather than MVC's.
+builder.Services.ConfigureHttpJsonOptions(options => ConfigureJson(options.SerializerOptions));
+
+// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Services.AddOpenApi();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("SystemDatabase")
+        ?? throw new InvalidOperationException("Connection string 'SystemDatabase' is not configured.")));
+
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<InstanceService>();
+
+builder.Services.AddOptions<JobOptions>()
+    .Bind(builder.Configuration.GetSection(JobOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<JobQueue>();
+builder.Services.AddScoped<JobService>();
+builder.Services.AddScoped<JobProcessor>();
+builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
+builder.Services.AddSingleton<IInstanceProvisioner, SimulatedInstanceProvisioner>();
+builder.Services.AddHostedService<JobWorker>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+app.UseExceptionHandler(errorApp => errorApp.Run(ErrorHandling.WriteStatusCodeBodyAsync));
+app.UseStatusCodePages(statusCodeContext => ErrorHandling.WriteStatusCodeBodyAsync(statusCodeContext.HttpContext));
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+app.UseHttpsRedirection();
+
+app.MapControllers();
+
+app.Run();
+
+static void ConfigureJson(JsonSerializerOptions options)
+{
+    // Enums are exposed as snake_case strings: "postgres", "provisioning", "provision_instance", ...
+    options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, allowIntegerValues: false));
+    // Numbers must be JSON numbers; "1" is not accepted for cpu.
+    options.NumberHandling = JsonNumberHandling.Strict;
+}

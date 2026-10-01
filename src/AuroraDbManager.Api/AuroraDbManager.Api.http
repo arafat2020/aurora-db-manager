@@ -1,0 +1,36 @@
+@AuroraDbManager.Api_HostAddress = http://localhost:5177
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/instances
+Content-Type: application/json
+
+{
+  "name": "production-db",
+  "engine": "postgres",
+  "version": "16",
+  "cpu": 1,
+  "memoryMb": 1024,
+  "storageGb": 20
+}
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances?page=1&pageSize=20
+Accept: application/json
+
+###
+
+@instanceId = 00000000-0000-0000-0000-000000000000
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}
+Accept: application/json
+
+###
+
+DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}
+
+###
+
+@jobId = 00000000-0000-0000-0000-000000000000
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/jobs/{{jobId}}
+Accept: application/json

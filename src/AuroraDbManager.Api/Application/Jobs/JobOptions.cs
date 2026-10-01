@@ -18,8 +18,4 @@ public sealed class JobOptions
     /// <summary>Wait between a failed attempt and the next one.</summary>
     [Range(0, 3600)]
     public int RetryDelaySeconds { get; set; } = 1;
-
-    /// <summary>How long the simulated provisioner pretends to work.</summary>
-    [Range(0, 600_000)]
-    public int SimulatedProvisioningDelayMilliseconds { get; set; } = 100;
 }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
 using Microsoft.EntityFrameworkCore;
 using static AuroraDbManager.Api.Tests.ApiClientExtensions;
@@ -252,17 +253,62 @@ public sealed class InstancesApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Delete_ExistingInstance_RemovesItAndItsJobs()
+    public async Task Delete_RunningInstance_RemovesItsResourcesMetadataAndJobs()
     {
         var (instanceId, jobId) = await _client.CreateInstanceAsync();
+        await _factory.ProcessJobAsync(jobId);
         var url = $"{InstancesUrl}/{instanceId}";
 
         var response = await _client.DeleteAsync(url);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal([instanceId], _factory.Provisioner.DeprovisionedInstanceIds);
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync(url)).StatusCode);
         await AssertNoInstancesAsync();
         await (await _client.GetAsync($"{JobsUrl}/{jobId}")).AssertErrorAsync(HttpStatusCode.NotFound, "JOB_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task Delete_FailedInstance_RemovesItsResourcesAndMetadata()
+    {
+        var (instanceId, jobId) = await _client.CreateInstanceAsync();
+        _factory.Provisioner.FailAllCalls();
+        await _factory.ProcessJobAsync(jobId);
+
+        var response = await _client.DeleteAsync($"{InstancesUrl}/{instanceId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal([instanceId], _factory.Provisioner.DeprovisionedInstanceIds);
+        await AssertNoInstancesAsync();
+    }
+
+    [Fact]
+    public async Task Delete_ProvisioningInstance_IsRejectedWithConflict()
+    {
+        var (instanceId, jobId) = await _client.CreateInstanceAsync();
+
+        var response = await _client.DeleteAsync($"{InstancesUrl}/{instanceId}");
+
+        await response.AssertErrorAsync(HttpStatusCode.Conflict, "INSTANCE_PROVISIONING");
+        Assert.Empty(_factory.Provisioner.DeprovisionedInstanceIds);
+        Assert.Equal("provisioning", (await _client.GetInstanceAsync(instanceId)).Status());
+        Assert.Equal("pending", (await _client.GetJobAsync(jobId)).Status());
+    }
+
+    [Fact]
+    public async Task Delete_ResourcesCannotBeRemoved_KeepsInstanceAndReportsSafeError()
+    {
+        var (instanceId, jobId) = await _client.CreateInstanceAsync();
+        await _factory.ProcessJobAsync(jobId);
+        _factory.Provisioner.DeprovisionFailure = new InstanceProvisioningException(
+            "DOCKER_UNAVAILABLE", "Docker is not available.", new IOException("connect /var/run/docker.sock: secret detail"));
+
+        var response = await _client.DeleteAsync($"{InstancesUrl}/{instanceId}");
+
+        var error = await response.AssertErrorAsync(HttpStatusCode.ServiceUnavailable, "DOCKER_UNAVAILABLE");
+        Assert.Equal("Docker is not available.", error.GetProperty("message").GetString());
+        Assert.DoesNotContain("secret detail", await response.Content.ReadAsStringAsync());
+        Assert.Equal("running", (await _client.GetInstanceAsync(instanceId)).Status());
     }
 
     [Fact]

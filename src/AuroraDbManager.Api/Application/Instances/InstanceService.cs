@@ -9,6 +9,7 @@ namespace AuroraDbManager.Api.Application.Instances;
 
 public sealed class InstanceService(
     AppDbContext db,
+    IInstanceProvisioner provisioner,
     JobQueue jobQueue,
     IOptions<JobOptions> jobOptions,
     TimeProvider timeProvider,
@@ -70,10 +71,41 @@ public sealed class InstanceService(
             totalCount);
     }
 
-    /// <returns><c>false</c> when no instance with the given id exists.</returns>
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>
+    /// Deletes an instance together with its database server and data. An instance that is still
+    /// provisioning is not deleted: its job may be creating resources at this very moment, and
+    /// removing the metadata would leave them behind with nothing pointing to them.
+    /// </summary>
+    /// <exception cref="InstanceProvisioningException">
+    /// The instance's resources could not be removed. Its metadata is kept so the delete can be retried.
+    /// </exception>
+    public async Task<DeleteInstanceResult> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await db.Instances.Where(i => i.Id == id).ExecuteDeleteAsync(cancellationToken);
-        return deleted > 0;
+        var instance = await db.Instances.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+        if (instance is null)
+        {
+            return DeleteInstanceResult.NotFound;
+        }
+
+        if (instance.Status == InstanceStatus.Provisioning)
+        {
+            return DeleteInstanceResult.Provisioning;
+        }
+
+        // Resources first: if this fails the metadata still exists and still points at them.
+        await provisioner.DeprovisionAsync(instance, cancellationToken);
+
+        await db.Instances.Where(i => i.Id == id).ExecuteDeleteAsync(cancellationToken);
+        logger.LogInformation("Instance {InstanceId} deleted", id);
+        return DeleteInstanceResult.Deleted;
     }
+}
+
+public enum DeleteInstanceResult
+{
+    Deleted,
+    NotFound,
+
+    /// <summary>Not deleted because the instance is still being provisioned.</summary>
+    Provisioning
 }

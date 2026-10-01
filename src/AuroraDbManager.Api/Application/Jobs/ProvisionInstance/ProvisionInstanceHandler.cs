@@ -38,6 +38,11 @@ public sealed class ProvisionInstanceHandler(
                 "The instance is not waiting to be provisioned.");
         }
 
+        // Every log written while provisioning, including the provisioner's own, carries these.
+        using var scope = logger.BeginScope(
+            "Job {JobId} attempt {Attempt}: provisioning {Engine} {Version} instance {InstanceId}",
+            job.Id, job.Attempt, instance.Engine, instance.Version, instance.Id);
+
         try
         {
             await provisioner.ProvisionAsync(instance, cancellationToken);
@@ -46,13 +51,14 @@ public sealed class ProvisionInstanceHandler(
         {
             throw;
         }
+        catch (InstanceProvisioningException exception)
+        {
+            // Its code and message are written for clients.
+            throw new JobExecutionException(exception.Code, exception.Message, exception);
+        }
         catch (Exception exception)
         {
-            // Only InstanceProvisioningException messages are written for clients.
-            var message = exception is InstanceProvisioningException
-                ? exception.Message
-                : "Instance provisioning failed.";
-            throw new JobExecutionException(JobErrorCodes.ProvisioningFailed, message, exception);
+            throw new JobExecutionException(JobErrorCodes.ProvisioningFailed, "Instance provisioning failed.", exception);
         }
 
         instance.MarkRunning(timeProvider.GetUtcNow().UtcDateTime);

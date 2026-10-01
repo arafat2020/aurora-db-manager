@@ -21,6 +21,11 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
 
     public int CallCount { get; private set; }
 
+    public List<Guid> DeprovisionedInstanceIds { get; } = [];
+
+    /// <summary>When set, <see cref="DeprovisionAsync"/> throws it.</summary>
+    public Exception? DeprovisionFailure { get; set; }
+
     public int MaxConcurrentCalls { get; private set; }
 
     public int InFlight => Volatile.Read(ref _inFlight);
@@ -80,7 +85,7 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
                 if (_failuresRemaining > 0)
                 {
                     _failuresRemaining--;
-                    throw _failure ?? new InstanceProvisioningException("Simulated provisioning failure.");
+                    throw _failure ?? new InstanceProvisioningException("PROVISIONING_FAILED", "Simulated provisioning failure.");
                 }
             }
         }
@@ -88,5 +93,20 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
         {
             Interlocked.Decrement(ref _inFlight);
         }
+    }
+
+    public Task DeprovisionAsync(Instance instance, CancellationToken cancellationToken)
+    {
+        if (DeprovisionFailure is not null)
+        {
+            throw DeprovisionFailure;
+        }
+
+        lock (_lock)
+        {
+            DeprovisionedInstanceIds.Add(instance.Id);
+        }
+
+        return Task.CompletedTask;
     }
 }

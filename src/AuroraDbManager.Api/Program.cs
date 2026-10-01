@@ -4,8 +4,10 @@ using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Errors;
+using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
-using AuroraDbManager.Api.Infrastructure.Provisioning;
+using AuroraDbManager.Api.Infrastructure.Secrets;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.EntityFrameworkCore;
 
@@ -48,7 +50,19 @@ builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddScoped<JobService>();
 builder.Services.AddScoped<JobProcessor>();
 builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
-builder.Services.AddSingleton<IInstanceProvisioner, SimulatedInstanceProvisioner>();
+
+builder.Services.AddOptions<DockerOptions>()
+    .Bind(builder.Configuration.GetSection(DockerOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<IDockerEngine, DockerEngine>();
+builder.Services.AddSingleton<DockerImageResolver>();
+builder.Services.AddScoped<IInstanceProvisioner, DockerInstanceProvisioner>();
+
+// Encrypts instance passwords at rest; see ProtectedInstanceSecretStore.
+builder.Services.AddDataProtection().SetApplicationName("AuroraDbManager");
+builder.Services.AddScoped<IInstanceSecretStore, ProtectedInstanceSecretStore>();
+
 builder.Services.AddHostedService<JobWorker>();
 
 var app = builder.Build();

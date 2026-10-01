@@ -1,5 +1,6 @@
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
+using AuroraDbManager.Api.Infrastructure.Secrets;
 using Microsoft.EntityFrameworkCore;
 
 namespace AuroraDbManager.Api.Infrastructure.Persistence;
@@ -9,6 +10,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 {
     public DbSet<Instance> Instances => Set<Instance>();
     public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<InstanceSecret> InstanceSecrets => Set<InstanceSecret>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

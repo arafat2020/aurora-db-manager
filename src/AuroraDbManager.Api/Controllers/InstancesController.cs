@@ -12,8 +12,8 @@ public sealed class InstancesController(InstanceService instances) : ControllerB
     /// <summary>Creates an instance and starts provisioning it in the background.</summary>
     /// <remarks>
     /// The instance is stored with status <c>provisioning</c> together with a <c>provision_instance</c>
-    /// job. The instance becomes <c>running</c> when the job completes, or <c>failed</c> when the job
-    /// has used all its attempts. Follow the job with <c>GET /api/v1/jobs/{id}</c>; the
+    /// job, which runs the database in a Docker container. The instance becomes <c>running</c> once
+    /// the database accepts connections, or <c>failed</c> when the job has used all its attempts. Follow the job with <c>GET /api/v1/jobs/{id}</c>; the
     /// <c>Location</c> header points to the instance.
     /// </remarks>
     [HttpPost]
@@ -44,13 +44,36 @@ public sealed class InstancesController(InstanceService instances) : ControllerB
         return instance is null ? InstanceNotFound() : Ok(instance);
     }
 
-    /// <summary>Deletes an instance metadata record and its jobs.</summary>
+    /// <summary>Deletes an instance, its database server and all of its data.</summary>
+    /// <remarks>
+    /// An instance in status <c>provisioning</c> cannot be deleted; the request is rejected with
+    /// <c>409 INSTANCE_PROVISIONING</c>. If the instance's Docker resources cannot be removed, for
+    /// example because Docker is unavailable, the request fails with <c>503</c> and nothing is deleted.
+    /// </remarks>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        return await instances.DeleteAsync(id, cancellationToken) ? NoContent() : InstanceNotFound();
+        try
+        {
+            return await instances.DeleteAsync(id, cancellationToken) switch
+            {
+                DeleteInstanceResult.Deleted => NoContent(),
+                DeleteInstanceResult.Provisioning => Conflict(ApiErrorResponse.Create(
+                    ErrorCodes.InstanceProvisioning,
+                    "Instance cannot be deleted while provisioning is in progress.")),
+                _ => InstanceNotFound()
+            };
+        }
+        catch (InstanceProvisioningException exception)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                ApiErrorResponse.Create(exception.Code, exception.Message));
+        }
     }
 
     private NotFoundObjectResult InstanceNotFound() =>

@@ -1,6 +1,7 @@
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Infrastructure.Persistence;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,8 @@ namespace AuroraDbManager.Api.Tests;
 
 /// <summary>
 /// Hosts the API in-process with the system database swapped for a private SQLite file and the
-/// provisioner swapped for a <see cref="FakeInstanceProvisioner"/>, so tests need no PostgreSQL
-/// server. A file rather than an in-memory database, because the job worker and the requests
+/// provisioner swapped for a <see cref="FakeInstanceProvisioner"/>, so tests need neither a
+/// PostgreSQL server nor Docker. A file rather than an in-memory database, because the job worker and the requests
 /// use the database concurrently and each needs its own connection.
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>
@@ -59,12 +60,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IInstanceProvisioner>();
             services.AddSingleton<IInstanceProvisioner>(Provisioner);
 
+            // Keys that live and die with the test, instead of a key ring in the user's home directory.
+            services.RemoveAll<IDataProtectionProvider>();
+            services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+
             services.Configure<JobOptions>(options =>
             {
                 options.MaxConcurrency = MaxConcurrency;
                 options.MaxAttempts = MaxAttempts;
                 options.RetryDelaySeconds = 0;
-                options.SimulatedProvisioningDelayMilliseconds = 0;
             });
 
             if (!RunWorker)

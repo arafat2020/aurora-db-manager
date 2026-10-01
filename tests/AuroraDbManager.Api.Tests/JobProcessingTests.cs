@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
 using Microsoft.EntityFrameworkCore;
 
@@ -258,7 +259,7 @@ public sealed class JobProcessingTests : IDisposable
     public async Task Process_InstanceDeletedBeforeProcessing_DoesNothing()
     {
         var (instanceId, jobId) = await _client.CreateInstanceAsync();
-        await _client.DeleteAsync($"{ApiClientExtensions.InstancesUrl}/{instanceId}");
+        await DeleteInstanceRowAsync(instanceId);
 
         await _factory.ProcessJobAsync(jobId);
 
@@ -273,10 +274,32 @@ public sealed class JobProcessingTests : IDisposable
         var processing = _factory.ProcessJobAsync(jobId);
         await Provisioner.WaitForCallsAsync();
 
-        await _client.DeleteAsync($"{ApiClientExtensions.InstancesUrl}/{instanceId}");
+        await DeleteInstanceRowAsync(instanceId);
         Provisioner.Release();
 
         await processing;
         Assert.Equal(0, await _factory.WithDbAsync(db => db.Jobs.CountAsync()));
     }
+
+    [Fact]
+    public async Task Process_ProvisionerReportsErrorCode_JobCarriesThatCodeAndMessage()
+    {
+        var (_, jobId) = await _client.CreateInstanceAsync();
+        Provisioner.FailNextCalls(int.MaxValue, new InstanceProvisioningException(
+            "DOCKER_UNAVAILABLE", "Docker is not available.", new IOException("raw socket detail")));
+
+        await _factory.ProcessJobAsync(jobId);
+
+        var response = await _client.GetAsync($"{ApiClientExtensions.JobsUrl}/{jobId}");
+        var raw = await response.Content.ReadAsStringAsync();
+        var error = (await response.ReadJsonAsync()).GetProperty("error");
+        Assert.Equal("DOCKER_UNAVAILABLE", error.GetProperty("code").GetString());
+        Assert.Equal("Docker is not available.", error.GetProperty("message").GetString());
+        Assert.DoesNotContain("raw socket detail", raw);
+    }
+
+    // The API refuses to delete an instance that is still provisioning, so these tests remove the
+    // row directly to check the processor copes with a job whose instance has vanished.
+    private Task<int> DeleteInstanceRowAsync(Guid instanceId) =>
+        _factory.WithDbAsync(db => db.Instances.Where(i => i.Id == instanceId).ExecuteDeleteAsync());
 }

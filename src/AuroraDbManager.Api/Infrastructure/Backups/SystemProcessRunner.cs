@@ -60,6 +60,15 @@ public sealed class SystemProcessRunner : IProcessRunner
                 if (request.StandardInput is not null)
                 {
                     await process.StandardInput.WriteAsync(request.StandardInput.AsMemory(), stop.Token);
+                    await process.StandardInput.FlushAsync(stop.Token);
+                }
+
+                if (request.StandardInputFilePath is not null)
+                {
+                    // Bytes, as they are in the file, a buffer at a time.
+                    await using var input = File.OpenRead(request.StandardInputFilePath);
+                    await input.CopyToAsync(process.StandardInput.BaseStream, stop.Token);
+                    await process.StandardInput.BaseStream.FlushAsync(stop.Token);
                 }
 
                 process.StandardInput.Close();

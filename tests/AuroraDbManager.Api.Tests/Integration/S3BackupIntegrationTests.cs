@@ -17,7 +17,7 @@ using static AuroraDbManager.Api.Tests.ApiClientExtensions;
 namespace AuroraDbManager.Api.Tests.Integration;
 
 /// <summary>
-/// Backups to S3-compatible object storage, against LocalStack: the whole application with the
+/// Backups to, and restores from, S3-compatible object storage, against LocalStack: the whole application with the
 /// real backup managers, the real dump programs, the real S3 storage and the AWS SDK's own
 /// client. Opt-in: see <see cref="DockerFactAttribute"/>. Each test starts its own LocalStack
 /// container on its own network and removes everything it created.
@@ -455,6 +455,92 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         // LocalStack publishes nothing on the host: the application reached it over the network.
         var localStack = await _docker.Containers.InspectContainerAsync(_localStackName);
         Assert.DoesNotContain(localStack.NetworkSettings.Ports.Values, bindings => bindings is { Count: > 0 });
+    }
+
+    // --- Restore ------------------------------------------------------------------------------
+
+    [DockerFact]
+    public async Task Postgres_BackupToS3_ThenRestoreFromS3_ReplacesTheDatabasesContents_AndLeavesTheObjectAsItWas()
+    {
+        var (instanceId, databaseId) = await CreateDatabaseAsync(_factory, _client, "postgres", "16", "shop");
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"create table customers (id int primary key, name text); insert into customers values (1, 'alice'), (2, 'bob');\"");
+        var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
+        var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.dump";
+        var uploaded = await _s3.GetObjectMetadataAsync(Bucket, key);
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"delete from customers where id = 1; insert into customers values (3, 'carol'); create table added_later (id int);\"");
+
+        var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
+        await _factory.ProcessJobAsync(jobId);
+
+        await AssertJobCompletedAsync(_client, jobId);
+        var job = await _client.GetJobAsync(jobId);
+        Assert.Equal("restore_database", job.GetProperty("type").GetString());
+        Assert.Equal(backupId, job.GetProperty("backupId").GetGuid());
+
+        // The database holds what the object holds, and nothing else.
+        await ExecAsync(instanceId, $"{Psql} -d shop -tAc \"select string_agg(id || ':' || name, ',' order by id) from customers\" | grep -qxF -- '1:alice,2:bob'");
+        await ExecAsync(instanceId, $"{Psql} -d shop -tAc \"select to_regclass('public.added_later') is null\" | grep -qx t");
+
+        // The object was read and nothing else: same object, same content, and still the only one.
+        var after = await _s3.GetObjectMetadataAsync(Bucket, key);
+        Assert.Equal(uploaded.ETag, after.ETag);
+        Assert.Equal(uploaded.LastModified, after.LastModified);
+        Assert.Equal(uploaded.ContentLength, after.ContentLength);
+        Assert.Equal([key], await ObjectKeysAsync());
+        Assert.Equal("completed", (await _client.GetBackupAsync(backupId)).Status());
+
+        // Nothing of the download is left on the local disk.
+        Assert.Empty(_factory.RestoreStagingEntries());
+        Assert.Empty(_factory.StagingFiles());
+        Assert.DoesNotContain(_factory.Logs.Entries, entry => entry.Contains(SecretKey, StringComparison.Ordinal));
+        Assert.DoesNotContain(SecretKey, job.GetRawText());
+        Assert.DoesNotContain(Bucket, job.GetRawText());
+    }
+
+    [DockerFact]
+    public async Task Mysql_BackupToS3_ThenRestoreFromS3_ReplacesTheDatabasesContents_AndLeavesTheObjectAsItWas()
+    {
+        var (instanceId, databaseId) = await CreateDatabaseAsync(_factory, _client, "mysql", "8.4", "shop");
+        await ExecAsync(instanceId, $"{Mysql} shop -e \"create table customers (id int primary key, name varchar(50)); insert into customers values (1, 'alice'), (2, 'bob');\"");
+        var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
+        var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.sql";
+        var uploaded = await _s3.GetObjectMetadataAsync(Bucket, key);
+        await ExecAsync(instanceId, $"{Mysql} shop -e \"delete from customers where id = 1; insert into customers values (3, 'carol'); create table added_later (id int);\"");
+
+        var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
+        await _factory.ProcessJobAsync(jobId);
+
+        await AssertJobCompletedAsync(_client, jobId);
+        await ExecAsync(instanceId, $"{Mysql} shop -N -B -e \"select group_concat(concat(id, ':', name) order by id) from customers\" | grep -qxF -- '1:alice,2:bob'");
+        await ExecAsync(instanceId, $"{Mysql} shop -N -B -e \"select group_concat(table_name) from information_schema.tables where table_schema = 'shop'\" | grep -qxF -- 'customers'");
+
+        var after = await _s3.GetObjectMetadataAsync(Bucket, key);
+        Assert.Equal(uploaded.ETag, after.ETag);
+        Assert.Equal(uploaded.LastModified, after.LastModified);
+        Assert.Equal([key], await ObjectKeysAsync());
+        Assert.Empty(_factory.RestoreStagingEntries());
+    }
+
+    [DockerFact]
+    public async Task ObjectNoLongerInTheBucket_RestoreFailsAsArtifactNotFound_AndTheDatabaseIsLeftExactlyAsItWas()
+    {
+        var (instanceId, databaseId) = await CreateDatabaseAsync(_factory, _client, "postgres", "16", "shop");
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"create table customers (name text); insert into customers values ('alice');\"");
+        var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"delete from customers; insert into customers values ('carol');\"");
+        // Removed by someone with access to the bucket; the application itself never deletes objects.
+        await _s3.DeleteObjectAsync(Bucket, Assert.Single(await ObjectKeysAsync()));
+
+        var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
+        await _factory.ProcessJobAsync(jobId);
+
+        var job = await _client.GetJobAsync(jobId);
+        Assert.Equal("failed", job.Status());
+        Assert.Equal(3, job.GetProperty("attempt").GetInt32());
+        Assert.Equal("RESTORE_ARTIFACT_NOT_FOUND", job.GetProperty("error").GetProperty("code").GetString());
+        Assert.DoesNotContain("backups/instances", job.GetRawText());
+        await ExecAsync(instanceId, $"{Psql} -d shop -tAc \"select string_agg(name, ',') from customers\" | grep -qxF -- 'carol'");
+        Assert.Empty(_factory.RestoreStagingEntries());
     }
 
     // --- Cancellation -------------------------------------------------------------------------

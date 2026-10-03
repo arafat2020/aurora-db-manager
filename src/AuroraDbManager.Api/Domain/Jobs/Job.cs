@@ -27,13 +27,16 @@ public sealed class Job
     public Guid InstanceId { get; private set; }
 
     /// <summary>
-    /// The database a <c>create_database</c>, <c>delete_database</c> or <c>backup_database</c> job
-    /// works on; null for every other type. Kept after the database is gone, so a finished job
+    /// The database a <c>create_database</c>, <c>delete_database</c>, <c>backup_database</c> or
+    /// <c>restore_database</c> job works on; null for every other type. Kept after the database is gone, so a finished job
     /// still says what it was for.
     /// </summary>
     public Guid? DatabaseId { get; private set; }
 
-    /// <summary>The backup a <c>backup_database</c> job produces; null for every other type.</summary>
+    /// <summary>
+    /// The backup a <c>backup_database</c> job produces, or a <c>restore_database</c> job restores
+    /// from; null for every other type.
+    /// </summary>
     public Guid? BackupId { get; private set; }
 
     /// <summary>
@@ -67,7 +70,7 @@ public sealed class Job
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAttempts);
 
-        var worksOnDatabase = type is JobType.CreateDatabase or JobType.DeleteDatabase or JobType.BackupDatabase;
+        var worksOnDatabase = type is JobType.CreateDatabase or JobType.DeleteDatabase or JobType.BackupDatabase or JobType.RestoreDatabase;
         if (worksOnDatabase != databaseId.HasValue)
         {
             throw new ArgumentException(
@@ -75,11 +78,11 @@ public sealed class Job
                 nameof(databaseId));
         }
 
-        var producesBackup = type is JobType.BackupDatabase;
-        if (producesBackup != backupId.HasValue)
+        var worksOnBackup = type is JobType.BackupDatabase or JobType.RestoreDatabase;
+        if (worksOnBackup != backupId.HasValue)
         {
             throw new ArgumentException(
-                producesBackup ? $"A {type} job needs a backup." : $"A {type} job does not produce a backup.",
+                worksOnBackup ? $"A {type} job needs a backup." : $"A {type} job does not work on a backup.",
                 nameof(backupId));
         }
 

@@ -19,6 +19,8 @@ public sealed class BackupOptions
 
     public BackupToolOptions Tools { get; set; } = new();
 
+    public RestoreOptions Restore { get; set; } = new();
+
     /// <summary>How long one backup attempt may run before the backup program is stopped.</summary>
     public int TimeoutSeconds { get; set; } = 3600;
 
@@ -50,6 +52,21 @@ public sealed class BackupOptions
         if (string.IsNullOrWhiteSpace(Tools.PgDumpPath) || string.IsNullOrWhiteSpace(Tools.MySqlDumpPath))
         {
             return "Backups:Tools:PgDumpPath and Backups:Tools:MySqlDumpPath are required.";
+        }
+
+        if (string.IsNullOrWhiteSpace(Tools.PgRestorePath) || string.IsNullOrWhiteSpace(Tools.MySqlPath))
+        {
+            return "Backups:Tools:PgRestorePath and Backups:Tools:MySqlPath are required.";
+        }
+
+        if (Restore.TimeoutSeconds is < 1 or > 604_800)
+        {
+            return "Backups:Restore:TimeoutSeconds must be between 1 and 604800.";
+        }
+
+        if (Restore.LockTimeoutSeconds is < 1 or > 3600)
+        {
+            return "Backups:Restore:LockTimeoutSeconds must be between 1 and 3600.";
         }
 
         if (TimeoutSeconds is < 1 or > 86_400)
@@ -115,7 +132,7 @@ public sealed class S3BackupOptions
     /// </summary>
     public string? StagingPath { get; set; }
 
-    /// <summary>How long uploading one backup may take.</summary>
+    /// <summary>How long uploading one backup, or downloading one for a restore, may take.</summary>
     public int UploadTimeoutSeconds { get; set; } = 3600;
 
     /// <summary>The prefix as it is used in keys: no leading or trailing slash, empty if there is none.</summary>
@@ -162,6 +179,29 @@ public sealed class S3BackupOptions
     }
 }
 
+/// <summary>Settings for restoring backups, bound from <c>Backups:Restore</c>.</summary>
+public sealed class RestoreOptions
+{
+    /// <summary>
+    /// Directory into which a backup is copied or downloaded before it is restored. Needs room
+    /// for one backup per restore running at the same time. It is the restores' own; backups in
+    /// the making are staged elsewhere. Empty for a directory under the system's temporary directory.
+    /// </summary>
+    public string? StagingPath { get; set; }
+
+    /// <summary>
+    /// How long the restore program may run in one attempt. Restoring takes longer than dumping:
+    /// indexes are rebuilt and constraints rechecked. The default is six hours.
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 21_600;
+
+    /// <summary>
+    /// How long emptying the target database waits for locks held by sessions that reconnected
+    /// after being ended, before the attempt fails and is retried.
+    /// </summary>
+    public int LockTimeoutSeconds { get; set; } = 60;
+}
+
 public sealed class BackupToolOptions
 {
     /// <summary>The <c>pg_dump</c> program: a name looked up on <c>PATH</c>, or a full path.</summary>
@@ -169,4 +209,10 @@ public sealed class BackupToolOptions
 
     /// <summary>The <c>mysqldump</c> program: a name looked up on <c>PATH</c>, or a full path.</summary>
     public string MySqlDumpPath { get; set; } = "mysqldump";
+
+    /// <summary>The <c>pg_restore</c> program: a name looked up on <c>PATH</c>, or a full path.</summary>
+    public string PgRestorePath { get; set; } = "pg_restore";
+
+    /// <summary>The <c>mysql</c> client program: a name looked up on <c>PATH</c>, or a full path.</summary>
+    public string MySqlPath { get; set; } = "mysql";
 }

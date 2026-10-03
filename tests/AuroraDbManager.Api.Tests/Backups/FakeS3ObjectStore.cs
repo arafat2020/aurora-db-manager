@@ -161,6 +161,30 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
         }
     }
 
+    /// <summary>Every download that was attempted, as bucket and key, in order.</summary>
+    public List<(string Bucket, string Key)> Downloads { get; } = [];
+
+    public async Task<bool> DownloadFileAsync(string bucket, string key, string filePath, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfUnavailable();
+
+        StoredObject? stored;
+        lock (_lock)
+        {
+            Downloads.Add((bucket, key));
+            _objects.TryGetValue((bucket, key), out stored);
+        }
+
+        if (stored is null)
+        {
+            return false;
+        }
+
+        await File.WriteAllBytesAsync(filePath, stored.Content, cancellationToken);
+        return true;
+    }
+
     private void ThrowIfUnavailable()
     {
         if (Unavailable)

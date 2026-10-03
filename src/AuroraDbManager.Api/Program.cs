@@ -8,6 +8,8 @@ using AuroraDbManager.Api.Application.Jobs.BackupDatabase;
 using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
 using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
+using AuroraDbManager.Api.Application.Jobs.RestoreDatabase;
+using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Errors;
 using AuroraDbManager.Api.Infrastructure.Backups;
@@ -15,6 +17,7 @@ using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
+using AuroraDbManager.Api.Infrastructure.Restores;
 using AuroraDbManager.Api.Infrastructure.Secrets;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -53,6 +56,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InstanceService>();
 builder.Services.AddScoped<DatabaseService>();
 builder.Services.AddScoped<BackupService>();
+builder.Services.AddScoped<RestoreService>();
 
 builder.Services.AddOptions<JobOptions>()
     .Bind(builder.Configuration.GetSection(JobOptions.SectionName))
@@ -70,6 +74,7 @@ builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
 builder.Services.AddScoped<IJobHandler, CreateDatabaseHandler>();
 builder.Services.AddScoped<IJobHandler, DeleteDatabaseHandler>();
 builder.Services.AddScoped<IJobHandler, BackupDatabaseHandler>();
+builder.Services.AddScoped<IJobHandler, RestoreDatabaseHandler>();
 
 builder.Services.AddOptions<DockerOptions>()
     .Bind(builder.Configuration.GetSection(DockerOptions.SectionName))
@@ -108,6 +113,10 @@ builder.Services.AddSingleton<IBackupStorage>(services =>
 builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
 builder.Services.AddScoped<IBackupManager, PostgreSqlBackupManager>();
 builder.Services.AddScoped<IBackupManager, MySqlBackupManager>();
+
+// Restores read a backup back from that storage and load it with the engines' own programs.
+builder.Services.AddScoped<IRestoreManager, PostgreSqlRestoreManager>();
+builder.Services.AddScoped<IRestoreManager, MySqlRestoreManager>();
 
 // Encrypts instance passwords at rest; see ProtectedInstanceSecretStore.
 builder.Services.AddDataProtection().SetApplicationName("AuroraDbManager");

@@ -22,21 +22,16 @@ public sealed class PostgreSqlBackupManager(
     ILogger<PostgreSqlBackupManager> logger)
     : DumpBackupManager(storage, endpoints, secrets, processes, options, logger)
 {
-    private const string AdminUser = "postgres";
-
-    // Every custom-format archive starts with these bytes.
-    private static readonly byte[] ArchiveMagic = "PGDMP"u8.ToArray();
+    private const string AdminUser = PostgresDumpFormat.AdminUser;
 
     public override InstanceEngine Engine => InstanceEngine.Postgres;
 
-    protected override string Extension => "dump";
+    protected override string Extension => PostgresDumpFormat.Extension;
 
     protected override string Tool => "pg_dump";
 
-    // One line: host:port:database:user:password, with ':' and '\' escaped inside a field.
     protected override string CredentialFileContent(InstanceEndpoint endpoint, Database database, string adminPassword) =>
-        string.Join(':', new[] { endpoint.Host, endpoint.Port.ToString(CultureInfo.InvariantCulture), database.Name, AdminUser, adminPassword }
-            .Select(field => field.Replace("\\", "\\\\").Replace(":", "\\:"))) + "\n";
+        PostgresDumpFormat.PasswordFile(endpoint, database.Name, adminPassword);
 
     protected override ProcessRequest BuildRequest(
         InstanceEndpoint endpoint, Database database, string outputPath, string credentialFilePath, BackupOptions options) =>
@@ -58,13 +53,8 @@ public sealed class PostgreSqlBackupManager(
             },
             TimeSpan.FromSeconds(options.TimeoutSeconds));
 
-    protected override async Task<bool> IsCompleteDumpAsync(string path, CancellationToken cancellationToken)
-    {
-        var header = new byte[ArchiveMagic.Length];
-        await using var file = File.OpenRead(path);
-        return await file.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, cancellationToken) == header.Length
-            && header.AsSpan().SequenceEqual(ArchiveMagic);
-    }
+    protected override Task<bool> IsCompleteDumpAsync(string path, CancellationToken cancellationToken) =>
+        PostgresDumpFormat.IsArchiveAsync(path, cancellationToken);
 
     protected override BackupOperationException? ClassifyFailure(string diagnostics)
     {

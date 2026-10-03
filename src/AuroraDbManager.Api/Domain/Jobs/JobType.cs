@@ -6,5 +6,6 @@ public enum JobType
     ProvisionInstance,
     CreateDatabase,
     DeleteDatabase,
-    BackupDatabase
+    BackupDatabase,
+    RestoreDatabase
 }

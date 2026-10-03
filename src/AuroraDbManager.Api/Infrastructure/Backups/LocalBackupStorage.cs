@@ -93,6 +93,39 @@ public sealed partial class LocalBackupStorage(IOptions<BackupOptions> options, 
             return new Staging(this, stagingPath, finalPath);
         });
 
+    public async Task DownloadAsync(BackupArtifact artifact, string destinationPath, CancellationToken cancellationToken)
+    {
+        // The path is what this storage recorded for a backup. It is still held to the rule
+        // that every artifact lies under the root; anything else is not an artifact of this storage.
+        var root = Root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var source = Path.GetFullPath(artifact.Path);
+        if (artifact.StorageType != Type
+            || !source.StartsWith(root, StringComparison.Ordinal)
+            || source.EndsWith(StagingSuffix, StringComparison.Ordinal)
+            || !File.Exists(source))
+        {
+            throw new BackupOperationException(BackupErrorCodes.BackupArtifactNotFound, "The backup's artifact is not in the backup storage.");
+        }
+
+        try
+        {
+            // Opened for reading only, and shared for reading: the artifact is never modified.
+            await using var from = new FileStream(source, System.IO.FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            await using var to = new FileStream(destinationPath, System.IO.FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await from.CopyToAsync(to, cancellationToken);
+        }
+        catch (FileNotFoundException exception)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupArtifactNotFound, "The backup's artifact is not in the backup storage.", exception);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageFailed, "The backup could not be read from the backup storage.", exception);
+        }
+    }
+
     /// <summary>Creates the root and every directory between it and <paramref name="path"/> that does not exist yet.</summary>
     private void CreateDirectory(string path)
     {

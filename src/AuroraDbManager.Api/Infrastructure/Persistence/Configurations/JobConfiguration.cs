@@ -19,10 +19,10 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             table.HasCheckConstraint(
                 "ck_jobs_database_id",
                 $"(type IN ({DatabaseJobTypes}) AND database_id IS NOT NULL) OR (type NOT IN ({DatabaseJobTypes}) AND database_id IS NULL)");
-            // Backup jobs name their backup; every other job has none.
+            // Backup and restore jobs name their backup; every other job has none.
             table.HasCheckConstraint(
                 "ck_jobs_backup_id",
-                $"(type = {BackupJobType} AND backup_id IS NOT NULL) OR (type <> {BackupJobType} AND backup_id IS NULL)");
+                $"(type IN ({BackupJobTypes}) AND backup_id IS NOT NULL) OR (type NOT IN ({BackupJobTypes}) AND backup_id IS NULL)");
         });
 
         builder.HasKey(j => j.Id).HasName("pk_jobs");
@@ -73,8 +73,9 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasDatabaseName("ux_jobs_instance_id_type_unfinished");
 
         // A database has at most one unfinished job of any type: a create and a delete, or two of
-        // either, can never be in progress for the same database. The same goes for backups: a
-        // database has one unfinished backup at most, and is never backed up while being deleted.
+        // either, can never be in progress for the same database. The same goes for backups and
+        // restores: a database has one unfinished backup or restore at most, is never backed up
+        // or restored while being deleted, and is never backed up while being restored.
         builder.HasIndex(j => j.DatabaseId)
             .IsUnique()
             .HasFilter($"{Unfinished} AND database_id IS NOT NULL")
@@ -84,8 +85,9 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
     private static readonly string Unfinished =
         $"status IN ('{EnumStorage.ToDbValue(JobStatus.Pending)}', '{EnumStorage.ToDbValue(JobStatus.Running)}')";
 
-    private static readonly string BackupJobType = $"'{EnumStorage.ToDbValue(JobType.BackupDatabase)}'";
+    private static readonly string BackupJobTypes =
+        $"'{EnumStorage.ToDbValue(JobType.BackupDatabase)}', '{EnumStorage.ToDbValue(JobType.RestoreDatabase)}'";
 
     private static readonly string DatabaseJobTypes =
-        $"'{EnumStorage.ToDbValue(JobType.CreateDatabase)}', '{EnumStorage.ToDbValue(JobType.DeleteDatabase)}', {BackupJobType}";
+        $"'{EnumStorage.ToDbValue(JobType.CreateDatabase)}', '{EnumStorage.ToDbValue(JobType.DeleteDatabase)}', {BackupJobTypes}";
 }

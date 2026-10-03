@@ -49,7 +49,7 @@ public sealed class InstancesController(InstanceService instances) : ControllerB
     /// An instance in status <c>provisioning</c> cannot be deleted; the request is rejected with
     /// <c>409 INSTANCE_PROVISIONING</c>, and neither can one with a database that is being created
     /// or deleted (<c>409 DATABASE_OPERATION_IN_PROGRESS</c>) or backed up
-    /// (<c>409 BACKUP_OPERATION_IN_PROGRESS</c>). The instance's databases are destroyed together
+    /// (<c>409 BACKUP_OPERATION_IN_PROGRESS</c>) or restored (<c>409 RESTORE_OPERATION_IN_PROGRESS</c>). The instance's databases are destroyed together
     /// with its data volume, and the records of their backups are removed; backup files are kept. If the instance's Docker resources cannot be removed, for
     /// example because Docker is unavailable, the request fails with <c>503</c> and nothing is deleted.
     /// </remarks>
@@ -74,6 +74,9 @@ public sealed class InstancesController(InstanceService instances) : ControllerB
                 DeleteInstanceResult.BackupInProgress => Conflict(ApiErrorResponse.Create(
                     ErrorCodes.BackupOperationInProgress,
                     "Instance cannot be deleted while one of its databases is being backed up.")),
+                DeleteInstanceResult.RestoreInProgress => Conflict(ApiErrorResponse.Create(
+                    ErrorCodes.RestoreOperationInProgress,
+                    "Instance cannot be deleted while one of its databases is being restored.")),
                 _ => InstanceNotFound()
             };
         }

@@ -75,3 +75,8 @@ Accept: application/json
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}
 Accept: application/json
+
+###
+
+# Replaces the contents of the backup's database with the backup. Destructive.
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}/restore

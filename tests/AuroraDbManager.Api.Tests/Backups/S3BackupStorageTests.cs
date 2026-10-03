@@ -416,4 +416,56 @@ public sealed class S3BackupStorageTests : IDisposable
         Assert.Equal(new[] { other, verified + ".partial" }.Order(), LocalFiles().Order());
         Assert.Equal(0, new FileInfo(staging.FilePath).Length);
     }
+
+    // --- Reading back -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Download_WritesTheObjectIntoTheFile_WithOneGet_AndChangesNothingInTheStore()
+    {
+        var storage = Storage();
+        var content = new byte[4321];
+        Random.Shared.NextBytes(content);
+        var artifact = await WriteAsync(storage, _location, content);
+        Directory.CreateDirectory(_staging);
+        var destination = Path.Combine(_staging, "restore-copy");
+
+        await storage.DownloadAsync(artifact, destination, default);
+
+        Assert.Equal(content, await File.ReadAllBytesAsync(destination));
+        Assert.Equal([(FakeS3ObjectStore.Bucket, KeyOf(_location))], _store.Downloads);
+        Assert.Equal(1, _store.UploadCount);
+        Assert.Equal(1, _store.ObjectsIn()[KeyOf(_location)].Version);
+    }
+
+    [Fact]
+    public async Task Download_NoSuchObject_OrAnArtifactOfAnotherStorage_FailsAsArtifactNotFound()
+    {
+        var storage = Storage();
+        Directory.CreateDirectory(_staging);
+        var destination = Path.Combine(_staging, "restore-copy");
+
+        var missing = await Assert.ThrowsAsync<BackupOperationException>(
+            () => storage.DownloadAsync(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 10), destination, default));
+        var foreign = await Assert.ThrowsAsync<BackupOperationException>(
+            () => storage.DownloadAsync(new BackupArtifact(BackupStorageType.Local, "/var/lib/aurora/backups/x.dump", 10), destination, default));
+
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", missing.Code);
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", foreign.Code);
+        Assert.DoesNotContain(KeyOf(_location), missing.Message);
+        // Only the first reached the store at all.
+        Assert.Single(_store.Downloads);
+    }
+
+    [Fact]
+    public async Task Download_StoreUnreachable_FailsAsUnavailable()
+    {
+        var storage = Storage();
+        var artifact = await WriteAsync(storage, _location, "a backup"u8.ToArray());
+        _store.Unavailable = true;
+
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(
+            () => storage.DownloadAsync(artifact, Path.Combine(_staging, "restore-copy"), default));
+
+        Assert.Equal("BACKUP_STORAGE_UNAVAILABLE", exception.Code);
+    }
 }

@@ -11,8 +11,15 @@ namespace AuroraDbManager.Api.Tests.Databases;
 /// reads identifiers the way the engine would, by its quote character, so a statement whose
 /// quoting is wrong ends up naming the wrong database or is not understood at all.
 /// </summary>
-public sealed class FakeSqlServer(char identifierQuote)
+public sealed class FakeSqlServer(char identifierQuote, bool permissive = false)
 {
+    /// <summary>
+    /// In permissive mode, what a query returns as its single value; null for no rows. Permissive
+    /// mode is for callers whose statements this server does not interpret: it records every
+    /// statement, answers queries from here, and changes nothing.
+    /// </summary>
+    public Func<string, object?> Scalars { get; set; } = sql => sql == "SELECT 1" ? 1 : null;
+
     public HashSet<string> Databases { get; } = [];
 
     /// <summary>Every statement executed, in order.</summary>
@@ -38,6 +45,11 @@ public sealed class FakeSqlServer(char identifierQuote)
     {
         Run(sql);
 
+        if (permissive)
+        {
+            return Scalars(sql);
+        }
+
         // The name must arrive as a parameter, never as part of the statement.
         var name = Assert.IsType<string>(Assert.Single(parameters, parameter => parameter.ParameterName == "name").Value);
         Assert.DoesNotContain(name, sql);
@@ -47,6 +59,11 @@ public sealed class FakeSqlServer(char identifierQuote)
     private void Execute(string sql)
     {
         Run(sql);
+
+        if (permissive)
+        {
+            return;
+        }
 
         if (TryReadName(sql, "CREATE DATABASE IF NOT EXISTS ", out var name, out var rest) && rest.Length == 0)
         {

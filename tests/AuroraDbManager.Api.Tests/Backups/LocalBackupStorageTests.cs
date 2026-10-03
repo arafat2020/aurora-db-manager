@@ -254,4 +254,84 @@ public sealed class LocalBackupStorageTests : IDisposable
         Assert.Equal(5, (await _storage.FindAsync(_location, default))!.SizeBytes);
         Assert.Null(await _storage.FindAsync(other, default));
     }
+
+    // --- Reading back -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Download_CopiesTheArtifact_AndLeavesItExactlyAsItWas()
+    {
+        var artifact = await WriteAsync(_location, "a finished backup");
+        var writtenAt = File.GetLastWriteTimeUtc(artifact.Path);
+        var destination = Path.Combine(Path.GetDirectoryName(_root)!, "restore-copy");
+
+        await _storage.DownloadAsync(artifact, destination, default);
+
+        Assert.Equal("a finished backup", await File.ReadAllTextAsync(destination));
+        Assert.Equal("a finished backup", await File.ReadAllTextAsync(artifact.Path));
+        Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(artifact.Path));
+        Assert.Equal([artifact.Path], AllFiles());
+    }
+
+    [Fact]
+    public async Task Download_ReplacesWhatIsAtTheDestination()
+    {
+        var artifact = await WriteAsync(_location, "short");
+        var destination = Path.Combine(Path.GetDirectoryName(_root)!, "restore-copy");
+        await File.WriteAllTextAsync(destination, "something much longer left by an earlier attempt");
+
+        await _storage.DownloadAsync(artifact, destination, default);
+
+        Assert.Equal("short", await File.ReadAllTextAsync(destination));
+    }
+
+    [Fact]
+    public async Task Download_ArtifactNoLongerThere_FailsAsArtifactNotFound()
+    {
+        var artifact = await WriteAsync(_location, "a finished backup");
+        File.Delete(artifact.Path);
+        var destination = Path.Combine(Path.GetDirectoryName(_root)!, "restore-copy");
+
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(() => _storage.DownloadAsync(artifact, destination, default));
+
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", exception.Code);
+        Assert.DoesNotContain(_root, exception.Message);
+        Assert.False(File.Exists(destination));
+    }
+
+    [Theory]
+    [InlineData("/etc/hosts")]
+    [InlineData("../../../../../../etc/hosts")]
+    [InlineData("instances/../../outside.dump")]
+    public async Task Download_PathThatIsNotUnderTheRoot_IsNeverRead_EvenIfTheFileExists(string path)
+    {
+        // A file that exists, just outside the root.
+        var outside = Path.Combine(Path.GetDirectoryName(_root)!, "outside.dump");
+        Directory.CreateDirectory(Path.GetDirectoryName(_root)!);
+        await File.WriteAllTextAsync(outside, "not a backup of this storage");
+        var candidate = path.StartsWith('/') ? path : Path.Combine(_root, path);
+        var destination = Path.Combine(Path.GetDirectoryName(_root)!, "restore-copy");
+
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(
+            () => _storage.DownloadAsync(new BackupArtifact(BackupStorageType.Local, candidate, 10), destination, default));
+
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", exception.Code);
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task Download_UnfinishedStagingFileOrAnArtifactOfAnotherStorage_IsNotAnArtifact()
+    {
+        var destination = Path.Combine(Path.GetDirectoryName(_root)!, "restore-copy");
+        await using var staging = await _storage.BeginAsync(_location, default);
+        await File.WriteAllTextAsync(staging.FilePath, "half a backup");
+
+        var partial = await Assert.ThrowsAsync<BackupOperationException>(
+            () => _storage.DownloadAsync(new BackupArtifact(BackupStorageType.Local, staging.FilePath, 13), destination, default));
+        var foreign = await Assert.ThrowsAsync<BackupOperationException>(
+            () => _storage.DownloadAsync(new BackupArtifact(BackupStorageType.S3, _storage.PathFor(_location), 13), destination, default));
+
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", partial.Code);
+        Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", foreign.Code);
+        Assert.False(File.Exists(destination));
+    }
 }

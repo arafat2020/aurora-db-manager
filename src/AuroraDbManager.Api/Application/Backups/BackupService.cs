@@ -41,9 +41,9 @@ public sealed class BackupService(
             return new CreateBackupResult(CreateBackupStatus.InstanceNotReady);
         }
 
-        if (await HasUnfinishedBackupAsync(databaseId, cancellationToken))
+        if (Rejection(await db.UnfinishedJobTypeAsync(databaseId, cancellationToken)) is { } busy)
         {
-            return new CreateBackupResult(CreateBackupStatus.BackupInProgress);
+            return new CreateBackupResult(busy);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -62,13 +62,13 @@ public sealed class BackupService(
         catch (DbUpdateException)
         {
             // The checks above can be overtaken by a concurrent request. A database has only one
-            // unfinished job, so whatever got in first, another backup or the database's
-            // deletion, made the index refuse this job. Find out which it was.
+            // unfinished job, so whatever got in first, another backup, a restore or the
+            // database's deletion, made the index refuse this job. Find out which it was.
             db.ChangeTracker.Clear();
 
-            if (await HasUnfinishedBackupAsync(databaseId, cancellationToken))
+            if (Rejection(await db.UnfinishedJobTypeAsync(databaseId, cancellationToken)) is { } concurrent)
             {
-                return new CreateBackupResult(CreateBackupStatus.BackupInProgress);
+                return new CreateBackupResult(concurrent);
             }
 
             var current = await db.Databases.AsNoTracking().FirstOrDefaultAsync(d => d.Id == databaseId, cancellationToken);
@@ -130,12 +130,15 @@ public sealed class BackupService(
             totalCount);
     }
 
-    private Task<bool> HasUnfinishedBackupAsync(Guid databaseId, CancellationToken cancellationToken) =>
-        db.Jobs.AnyAsync(
-            j => j.DatabaseId == databaseId
-                && j.Type == JobType.BackupDatabase
-                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
-            cancellationToken);
+    /// <summary>Why a database with that unfinished job cannot be backed up; null if it can.</summary>
+    private static CreateBackupStatus? Rejection(JobType? unfinished) => unfinished switch
+    {
+        JobType.BackupDatabase => CreateBackupStatus.BackupInProgress,
+        // A backup taken in the middle of a restore would be a backup of half a database.
+        JobType.RestoreDatabase => CreateBackupStatus.RestoreInProgress,
+        // A database that is being created or deleted is reported by its status.
+        _ => null
+    };
 }
 
 /// <param name="Status">Whether the backup was accepted, and if not, why.</param>
@@ -154,5 +157,8 @@ public enum CreateBackupStatus
     InstanceNotReady,
 
     /// <summary>Not accepted because the database already has a backup that is not finished.</summary>
-    BackupInProgress
+    BackupInProgress,
+
+    /// <summary>Not accepted because the database is being restored.</summary>
+    RestoreInProgress
 }

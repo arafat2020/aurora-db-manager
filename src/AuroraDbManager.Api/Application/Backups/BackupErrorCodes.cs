@@ -33,6 +33,9 @@ public static class BackupErrorCodes
     /// <summary>The upload was reported as done, but the stored object is not what was uploaded.</summary>
     public const string BackupStorageVerificationFailed = "BACKUP_STORAGE_VERIFICATION_FAILED";
 
+    /// <summary>The backup's artifact is not in the storage, at the place its metadata names.</summary>
+    public const string BackupArtifactNotFound = "BACKUP_ARTIFACT_NOT_FOUND";
+
     /// <summary>The backup is not in the status the job starts from, or is not the job's.</summary>
     public const string BackupInvalidState = "BACKUP_INVALID_STATE";
 

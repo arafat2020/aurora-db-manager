@@ -16,6 +16,9 @@ public static class ErrorCodes
     public const string DatabaseNotReady = "DATABASE_NOT_READY";
     public const string BackupNotFound = "BACKUP_NOT_FOUND";
     public const string BackupOperationInProgress = "BACKUP_OPERATION_IN_PROGRESS";
+    public const string BackupNotCompleted = "BACKUP_NOT_COMPLETED";
+    public const string BackupStorageNotConfigured = "BACKUP_STORAGE_NOT_CONFIGURED";
+    public const string RestoreOperationInProgress = "RESTORE_OPERATION_IN_PROGRESS";
     public const string JobNotFound = "JOB_NOT_FOUND";
     public const string NotFound = "NOT_FOUND";
     public const string MethodNotAllowed = "METHOD_NOT_ALLOWED";

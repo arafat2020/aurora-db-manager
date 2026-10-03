@@ -1,8 +1,8 @@
 namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 
 /// <summary>
-/// The two S3 operations backup storage needs, and nothing else: put a file as an object, and
-/// ask whether an object is there. All AWS SDK calls live behind this interface, so
+/// The three S3 operations backup storage needs, and nothing else: put a file as an object, ask
+/// whether an object is there, and get an object into a file. All AWS SDK calls live behind this interface, so
 /// <see cref="S3BackupStorage"/> can be tested without an object store. Failures are reported as
 /// <see cref="Application.Backups.BackupOperationException"/> with a client-safe code and message.
 /// </summary>
@@ -16,6 +16,12 @@ public interface IS3ObjectClient
     /// disk as it is sent; it is never held in memory as a whole.
     /// </summary>
     Task UploadFileAsync(S3Upload upload, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Writes the object into the local file, replacing it, and returns false if there is no such
+    /// object. The object is written to disk as it arrives; it is never held in memory as a whole.
+    /// </summary>
+    Task<bool> DownloadFileAsync(string bucket, string key, string filePath, CancellationToken cancellationToken);
 }
 
 /// <param name="SizeBytes">The object's size as the store reports it.</param>

@@ -1,9 +1,9 @@
 namespace AuroraDbManager.Api.Infrastructure.Backups;
 
 /// <summary>
-/// Runs one of the backup programs. This exists so the backup managers can be tested without the
-/// programs and so there is exactly one place that starts a process. It is not a way to run
-/// commands: only the backup managers use it, with a program named in the server's configuration
+/// Runs one of the backup and restore programs. This exists so the backup and restore managers
+/// can be tested without the programs and so there is exactly one place that starts a process.
+/// It is not a way to run commands: only those managers use it, with a program named in the server's configuration
 /// and arguments they build themselves. There is no shell involved at any point; the program is
 /// started directly and each argument reaches it exactly as given.
 /// </summary>
@@ -23,13 +23,19 @@ public interface IProcessRunner
 /// <param name="Arguments">The arguments, one element each. Never contains secrets: command lines are visible to other users.</param>
 /// <param name="Environment">Variables added to the environment the program inherits.</param>
 /// <param name="Timeout">How long the program may run.</param>
-/// <param name="StandardInput">Text written to the program's standard input, which is then closed; null for none.</param>
+/// <param name="StandardInput">Text written to the program's standard input; null for none.</param>
+/// <param name="StandardInputFilePath">
+/// A file whose content is streamed to the program's standard input, after
+/// <paramref name="StandardInput"/> if both are given; null for none. For input too large to hold
+/// in memory. Standard input is closed once everything has been written.
+/// </param>
 public sealed record ProcessRequest(
     string Executable,
     IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string> Environment,
     TimeSpan Timeout,
-    string? StandardInput = null)
+    string? StandardInput = null,
+    string? StandardInputFilePath = null)
 {
     // Keeps arguments, environment and input out of anything that prints a request.
     public override string ToString() => $"{nameof(ProcessRequest)} {{ Executable = {Executable} }}";

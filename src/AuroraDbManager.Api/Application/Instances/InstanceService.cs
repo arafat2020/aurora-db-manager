@@ -75,7 +75,7 @@ public sealed class InstanceService(
     /// Deletes an instance together with its database server and data. An instance that is still
     /// provisioning is not deleted: its job may be creating resources at this very moment, and
     /// removing the metadata would leave them behind with nothing pointing to them. Nor is one with
-    /// a database being created, deleted or backed up: that job is working inside the server right now.
+    /// a database being created, deleted, backed up or restored: that job is working inside the server right now.
     /// </summary>
     /// <remarks>
     /// The instance's databases are not dropped one by one. They live in the instance's data
@@ -111,6 +111,12 @@ public sealed class InstanceService(
             return DeleteInstanceResult.BackupInProgress;
         }
 
+        // A restore is writing into the server; the same goes for it.
+        if (unfinishedDatabaseJobTypes.Contains(JobType.RestoreDatabase))
+        {
+            return DeleteInstanceResult.RestoreInProgress;
+        }
+
         if (unfinishedDatabaseJobTypes.Count > 0)
         {
             return DeleteInstanceResult.DatabaseOperationInProgress;
@@ -137,5 +143,8 @@ public enum DeleteInstanceResult
     DatabaseOperationInProgress,
 
     /// <summary>Not deleted because one of the instance's databases is being backed up.</summary>
-    BackupInProgress
+    BackupInProgress,
+
+    /// <summary>Not deleted because one of the instance's databases is being restored.</summary>
+    RestoreInProgress
 }

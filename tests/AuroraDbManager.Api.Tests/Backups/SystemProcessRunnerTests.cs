@@ -90,6 +90,72 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
+    public async Task StandardInputFile_IsStreamedByteForByte_AndClosed()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"aurora-runner-{Guid.NewGuid():N}");
+        // Larger than any pipe buffer, with bytes that are not text.
+        var content = new byte[3 * 1024 * 1024];
+        Random.Shared.NextBytes(content);
+        await File.WriteAllBytesAsync(path, content);
+
+        try
+        {
+            // The program reports how many bytes it received and their checksum.
+            var request = new ProcessRequest(
+                "/bin/sh", ["-c", "cksum"], new Dictionary<string, string>(), Generous, StandardInputFilePath: path);
+
+            var result = await _runner.RunAsync(request, default);
+            var expected = await _runner.RunAsync(new ProcessRequest("/bin/sh", ["-c", "cksum < \"$0\"", path], new Dictionary<string, string>(), Generous), default);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains(content.Length.ToString(System.Globalization.CultureInfo.InvariantCulture), result.StandardOutput);
+            Assert.Equal(expected.StandardOutput.Trim(), result.StandardOutput.Trim());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task StandardInputTextAndFile_TheTextComesFirst_ThenTheFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"aurora-runner-{Guid.NewGuid():N}");
+        await File.WriteAllTextAsync(path, "second line, from the file\n");
+
+        try
+        {
+            var result = await _runner.RunAsync(
+                new ProcessRequest("/bin/cat", [], new Dictionary<string, string>(), Generous, "first line, as text\n", path), default);
+
+            Assert.Equal("first line, as text\nsecond line, from the file\n", result.StandardOutput);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task StandardInputFile_ProgramThatExitsWithoutReadingIt_DoesNotHangOrThrow()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"aurora-runner-{Guid.NewGuid():N}");
+        await File.WriteAllBytesAsync(path, new byte[3 * 1024 * 1024]);
+
+        try
+        {
+            var result = await _runner.RunAsync(
+                new ProcessRequest("/bin/sh", ["-c", "exit 3"], new Dictionary<string, string>(), Generous, StandardInputFilePath: path), default);
+
+            Assert.Equal(3, result.ExitCode);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task NoStandardInput_ProgramSeesEndOfInput_AndDoesNotHang()
     {
         var result = await _runner.RunAsync(new ProcessRequest("/bin/cat", [], new Dictionary<string, string>(), Generous), default);

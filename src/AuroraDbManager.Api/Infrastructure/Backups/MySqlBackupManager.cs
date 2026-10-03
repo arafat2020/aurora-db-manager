@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -28,21 +27,16 @@ public sealed class MySqlBackupManager(
     ILogger<MySqlBackupManager> logger)
     : DumpBackupManager(storage, endpoints, secrets, processes, options, logger)
 {
-    private const string AdminUser = "root";
-
-    // mysqldump ends every dump it finished with this comment; a dump cut short lacks it.
-    private const string CompletionMarker = "-- Dump completed";
-    private const int CompletionMarkerWindow = 512;
+    private const string AdminUser = MySqlDumpFormat.AdminUser;
 
     public override InstanceEngine Engine => InstanceEngine.Mysql;
 
-    protected override string Extension => "sql";
+    protected override string Extension => MySqlDumpFormat.Extension;
 
     protected override string Tool => "mysqldump";
 
-    // An option file; inside double quotes '\' and '"' are escaped with a backslash.
     protected override string CredentialFileContent(InstanceEndpoint endpoint, Database database, string adminPassword) =>
-        $"[client]\npassword=\"{adminPassword.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"\n";
+        MySqlDumpFormat.OptionFile(adminPassword);
 
     protected override ProcessRequest BuildRequest(
         InstanceEndpoint endpoint, Database database, string outputPath, string credentialFilePath, BackupOptions options) =>
@@ -68,15 +62,8 @@ public sealed class MySqlBackupManager(
             new Dictionary<string, string>(),
             TimeSpan.FromSeconds(options.TimeoutSeconds));
 
-    protected override async Task<bool> IsCompleteDumpAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var file = File.OpenRead(path);
-        file.Seek(-Math.Min(file.Length, CompletionMarkerWindow), SeekOrigin.End);
-
-        var tail = new byte[CompletionMarkerWindow];
-        var read = await file.ReadAtLeastAsync(tail, tail.Length, throwOnEndOfStream: false, cancellationToken);
-        return Encoding.UTF8.GetString(tail, 0, read).Contains(CompletionMarker, StringComparison.Ordinal);
-    }
+    protected override Task<bool> IsCompleteDumpAsync(string path, CancellationToken cancellationToken) =>
+        MySqlDumpFormat.IsCompleteDumpAsync(path, cancellationToken);
 
     protected override BackupOperationException? ClassifyFailure(string diagnostics)
     {

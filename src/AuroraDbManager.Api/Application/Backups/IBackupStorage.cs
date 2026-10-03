@@ -24,6 +24,19 @@ public interface IBackupStorage
     /// attempt left unfinished and provides an empty local file to write to.
     /// </summary>
     Task<IBackupStaging> BeginAsync(BackupLocation location, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Copies a finished artifact of this storage into the local file <paramref name="destinationPath"/>,
+    /// replacing it. The artifact is only read, never changed or removed. The copy is streamed;
+    /// an artifact is never held in memory as a whole.
+    /// </summary>
+    /// <param name="artifact">The artifact as a backup's metadata records it. Not anything a client supplied.</param>
+    /// <param name="destinationPath">A local file of the caller's.</param>
+    /// <param name="cancellationToken">Stops the copy; what was written so far is the caller's to remove.</param>
+    /// <exception cref="BackupOperationException">
+    /// With <see cref="BackupErrorCodes.BackupArtifactNotFound"/> if the artifact is not there.
+    /// </exception>
+    Task DownloadAsync(BackupArtifact artifact, string destinationPath, CancellationToken cancellationToken);
 }
 
 /// <summary>An artifact being written. Disposing it without committing discards what was written.</summary>

@@ -81,6 +81,26 @@ public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3Obje
         }
     }
 
+    public async Task<bool> DownloadFileAsync(string bucket, string key, string filePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // A plain GET: the object is read and nothing else.
+            using var response = await _client.Value.GetObjectAsync(
+                new GetObjectRequest { BucketName = bucket, Key = key }, cancellationToken);
+            await response.WriteResponseStreamToFileAsync(filePath, append: false, cancellationToken);
+            return true;
+        }
+        catch (AmazonS3Exception exception) when (exception.ErrorCode == "NoSuchKey")
+        {
+            return false;
+        }
+        catch (Exception exception) when (!IsCancellation(exception, cancellationToken))
+        {
+            throw S3Errors.Translate(exception);
+        }
+    }
+
     public void Dispose()
     {
         if (_client.IsValueCreated)

@@ -33,6 +33,8 @@ namespace AuroraDbManager.Api.Tests;
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>
 {
+    private static readonly EphemeralDataProtectionProvider DataProtection = new();
+
     private readonly string _ownDatabasePath =
         Path.Combine(Path.GetTempPath(), $"aurora-db-manager-tests-{Guid.NewGuid():N}.db");
 
@@ -77,6 +79,28 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     /// <summary>The object store behind S3 backup storage. Unused unless a test selects that storage.</summary>
     public FakeS3ObjectStore ObjectStore { get; } = new();
+
+    /// <summary>
+    /// The databases the restore managers connect to, to empty and to verify them: every statement
+    /// is recorded and nothing is interpreted.
+    /// </summary>
+    public FakeSqlServer RestoreSql { get; } = new('"', permissive: true);
+
+    /// <summary>The local directory restores stage artifacts in. Deleted with the factory.</summary>
+    public string RestoreStagingRoot { get; } =
+        Path.Combine(Path.GetTempPath(), $"aurora-db-manager-tests-restore-{Guid.NewGuid():N}");
+
+    /// <summary>Everything in the directory restores stage artifacts in: files and directories.</summary>
+    public IReadOnlyList<string> RestoreStagingEntries() =>
+        Directory.Exists(RestoreStagingRoot) ? Directory.GetFileSystemEntries(RestoreStagingRoot, "*", SearchOption.AllDirectories) : [];
+
+    /// <summary>Requests a restore and returns the id of its job.</summary>
+    public static async Task<Guid> RequestRestoreAsync(HttpClient client, Guid backupId)
+    {
+        var response = await client.PostAsync($"{ApiClientExtensions.BackupsUrl}/{backupId}/restore", content: null);
+        var body = await response.ReadJsonAsync(System.Net.HttpStatusCode.Accepted);
+        return body.GetProperty("job").GetProperty("id").GetGuid();
+    }
 
     /// <summary>The local directory S3 backup storage stages backups in. Deleted with the factory.</summary>
     public string StagingRoot { get; } =
@@ -236,6 +260,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             {
                 options.Local.RootPath = BackupRoot;
                 options.S3.StagingPath = StagingRoot;
+                options.Restore.StagingPath = RestoreStagingRoot;
                 ConfigureBackups?.Invoke(options);
             });
 
@@ -245,6 +270,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IInstanceEndpointResolver>(Endpoints);
                 services.RemoveAll<IProcessRunner>();
                 services.AddSingleton<IProcessRunner>(DumpTools);
+                // The restore managers' own connections to the target database.
+                services.AddSingleton<Func<string, System.Data.Common.DbConnection>>(RestoreSql.Connect);
                 // Never the real client: an ordinary test must not be able to reach a network.
                 services.RemoveAll<IS3ObjectClient>();
                 services.AddSingleton<IS3ObjectClient>(ObjectStore);
@@ -260,9 +287,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 services.AddSingleton(Clock);
             }
 
-            // Keys that live and die with the test, instead of a key ring in the user's home directory.
+            // Keys that live and die with the test run, instead of a key ring in the user's home
+            // directory. One key ring for all factories, as a restarted application has the one
+            // it had before: what one factory encrypted, a second one on the same database can read.
             services.RemoveAll<IDataProtectionProvider>();
-            services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+            services.AddSingleton<IDataProtectionProvider>(DataProtection);
 
             services.Configure<JobOptions>(options =>
             {
@@ -290,7 +319,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         if (disposing)
         {
             TempDatabase.Delete(_ownDatabasePath);
-            foreach (var directory in new[] { _ownBackupRoot, StagingRoot })
+            foreach (var directory in new[] { _ownBackupRoot, StagingRoot, RestoreStagingRoot })
             {
                 if (Directory.Exists(directory))
                 {

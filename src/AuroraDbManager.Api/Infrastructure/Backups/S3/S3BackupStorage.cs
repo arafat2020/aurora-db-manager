@@ -148,6 +148,43 @@ public sealed partial class S3BackupStorage(
         }
     }
 
+    public async Task DownloadAsync(BackupArtifact artifact, string destinationPath, CancellationToken cancellationToken)
+    {
+        if (artifact.StorageType != Type || string.IsNullOrWhiteSpace(artifact.Path))
+        {
+            throw NotFound();
+        }
+
+        // The caller's token stops the download; so does taking longer than allowed.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Settings.UploadTimeoutSeconds));
+
+        bool found;
+        try
+        {
+            // The key is the one recorded for the backup, in the server's own bucket.
+            found = await s3.DownloadFileAsync(Settings.Bucket, artifact.Path, destinationPath, timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageTimeout, "The backup could not be downloaded in time.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageFailed, "The backup could not be read from the backup storage.", exception);
+        }
+
+        if (!found)
+        {
+            throw NotFound();
+        }
+
+        static BackupOperationException NotFound() =>
+            new(BackupErrorCodes.BackupArtifactNotFound, "The backup's artifact is not in the backup storage.");
+    }
+
     /// <summary>The local file a validated backup is uploaded from. Determined by the backup's id, like its key.</summary>
     private string VerifiedPathFor(BackupLocation location) =>
         Path.Combine(StagingDirectory, $"{location.BackupId:D}.{location.Extension}");

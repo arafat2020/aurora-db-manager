@@ -168,14 +168,22 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
     }
 
     /// <summary>The application, configured for S3 the way a deployment would configure it.</summary>
-    private ApiFactory S3Factory(string? endpoint = null, string bucket = Bucket)
+    private ApiFactory S3Factory(
+        string? endpoint = null,
+        string bucket = Bucket,
+        BackupStorageType defaultStorage = BackupStorageType.S3,
+        string? databasePath = null,
+        string? backupRootPath = null)
     {
         var factory = new ApiFactory
         {
             RealDockerNetwork = _network,
+            DatabasePath = databasePath,
+            BackupRootPath = backupRootPath,
             ConfigureBackups = options =>
             {
-                options.StorageType = BackupStorageType.S3;
+                // The default for new backups; S3 is configured either way.
+                options.StorageType = defaultStorage;
                 options.S3.Bucket = bucket;
                 options.S3.Region = Region;
                 options.S3.Endpoint = endpoint ?? _endpoint;
@@ -611,6 +619,94 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         Assert.DoesNotContain("backups/instances", job.GetRawText());
         await ExecAsync(instanceId, $"{Psql} -d shop -tAc \"select string_agg(name, ',') from customers\" | grep -qxF -- 'carol'");
         Assert.Empty(_factory.RestoreStagingEntries());
+    }
+
+    // --- Historical backups under a changed default -------------------------------------------
+
+    [DockerFact]
+    public async Task S3Backup_IsRestoredFromS3_AfterTheServersDefaultWasChangedToLocal()
+    {
+        using var database = new TempDatabase();
+        var s3Default = S3Factory(databasePath: database.Path);
+        using var client = s3Default.CreateClient();
+        var (instanceId, databaseId) = await CreateDatabaseAsync(s3Default, client, "postgres", "16", "shop");
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"create table customers (id int primary key, name text); insert into customers values (1, 'alice'), (2, 'bob');\"");
+        var backupId = await s3Default.CreateCompletedBackupAsync(client, databaseId);
+        var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.dump";
+        var uploaded = await _s3.GetObjectMetadataAsync(Bucket, key);
+        await ExecAsync(instanceId, $"{Psql} -d shop -c \"delete from customers; insert into customers values (3, 'carol');\"");
+
+        // The same system database and the same bucket; new backups now go to local storage.
+        var localDefault = S3Factory(defaultStorage: BackupStorageType.Local, databasePath: database.Path);
+        using var restarted = localDefault.CreateClient();
+        Assert.IsType<Infrastructure.Backups.LocalBackupStorage>(localDefault.Services.GetRequiredService<IBackupStorage>());
+        Assert.Equal("s3", (await restarted.GetBackupAsync(backupId)).GetProperty("storageType").GetString());
+
+        var jobId = await ApiFactory.RequestRestoreAsync(restarted, backupId);
+        await localDefault.ProcessJobAsync(jobId);
+
+        await AssertJobCompletedAsync(restarted, jobId);
+        await ExecAsync(instanceId, $"{Psql} -d shop -tAc \"select string_agg(id || ':' || name, ',' order by id) from customers\" | grep -qxF -- '1:alice,2:bob'");
+        // Fetched from the bucket, by the backup's own record; nothing was looked for locally.
+        Assert.Contains(localDefault.Logs.Entries, entry => entry.Contains("from S3 storage", StringComparison.Ordinal));
+        Assert.Empty(localDefault.BackupFiles());
+        var after = await _s3.GetObjectMetadataAsync(Bucket, key);
+        Assert.Equal(uploaded.ETag, after.ETag);
+        Assert.Equal(uploaded.LastModified, after.LastModified);
+
+        // What is new follows the default: the next backup is a local file, and the bucket gains nothing.
+        var next = await localDefault.CreateCompletedBackupAsync(restarted, databaseId);
+        Assert.Equal("local", (await restarted.GetBackupAsync(next)).GetProperty("storageType").GetString());
+        Assert.Single(localDefault.BackupFiles());
+        Assert.Equal([key], await ObjectKeysAsync());
+    }
+
+    [DockerFact]
+    public async Task LocalBackup_IsRestoredFromTheLocalDirectory_AfterTheServersDefaultWasChangedToS3()
+    {
+        using var database = new TempDatabase();
+        var backupRoot = Path.Combine(Path.GetTempPath(), $"aurora-it-backups-{Guid.NewGuid():N}");
+        try
+        {
+            var localDefault = S3Factory(defaultStorage: BackupStorageType.Local, databasePath: database.Path, backupRootPath: backupRoot);
+            using var client = localDefault.CreateClient();
+            var (instanceId, databaseId) = await CreateDatabaseAsync(localDefault, client, "mysql", "8.4", "shop");
+            await ExecAsync(instanceId, $"{Mysql} shop -e \"create table customers (id int primary key, name varchar(50)); insert into customers values (1, 'alice'), (2, 'bob');\"");
+            var backupId = await localDefault.CreateCompletedBackupAsync(client, databaseId);
+            var artifact = localDefault.BackupFilePath(instanceId, databaseId, backupId, "sql");
+            Assert.True(File.Exists(artifact));
+            Assert.Empty(await ObjectKeysAsync());
+            await ExecAsync(instanceId, $"{Mysql} shop -e \"delete from customers; insert into customers values (3, 'carol');\"");
+
+            // The same system database and the same backup directory; new backups now go to S3.
+            var s3Default = S3Factory(databasePath: database.Path, backupRootPath: backupRoot);
+            using var restarted = s3Default.CreateClient();
+            Assert.IsType<S3BackupStorage>(s3Default.Services.GetRequiredService<IBackupStorage>());
+            Assert.Equal("local", (await restarted.GetBackupAsync(backupId)).GetProperty("storageType").GetString());
+
+            var jobId = await ApiFactory.RequestRestoreAsync(restarted, backupId);
+            await s3Default.ProcessJobAsync(jobId);
+
+            await AssertJobCompletedAsync(restarted, jobId);
+            await ExecAsync(instanceId, $"{Mysql} shop -N -B -e \"select group_concat(concat(id, ':', name) order by id) from customers\" | grep -qxF -- '1:alice,2:bob'");
+            // Read from the directory, by the backup's own record; the bucket was never involved.
+            Assert.Contains(s3Default.Logs.Entries, entry => entry.Contains("from Local storage", StringComparison.Ordinal));
+            Assert.Empty(await ObjectKeysAsync());
+            Assert.True(File.Exists(artifact));
+
+            // What is new follows the default: the next backup is an object.
+            var next = await s3Default.CreateCompletedBackupAsync(restarted, databaseId);
+            Assert.Equal("s3", (await restarted.GetBackupAsync(next)).GetProperty("storageType").GetString());
+            Assert.Single(await ObjectKeysAsync());
+            Assert.Equal([artifact], s3Default.BackupFiles());
+        }
+        finally
+        {
+            if (Directory.Exists(backupRoot))
+            {
+                Directory.Delete(backupRoot, recursive: true);
+            }
+        }
     }
 
     // --- Cancellation -------------------------------------------------------------------------

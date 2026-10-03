@@ -20,7 +20,7 @@ namespace AuroraDbManager.Api.Application.Restores;
 /// </summary>
 public sealed class RestoreService(
     AppDbContext db,
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     JobQueue jobQueue,
     IOptions<JobOptions> jobOptions,
     TimeProvider timeProvider,
@@ -39,9 +39,16 @@ public sealed class RestoreService(
             return new CreateRestoreResult(CreateRestoreStatus.BackupNotCompleted);
         }
 
-        // The artifact can only be read from the storage the server is configured with.
-        if (backup.StorageType != storage.Type)
+        // The artifact is read from the storage the backup is in, which need not be the server's
+        // default for new backups. What is required is that the server can use that storage at all.
+        try
         {
+            storages.Resolve(backup.StorageType);
+        }
+        catch (BackupOperationException exception) when (exception.Code == BackupErrorCodes.BackupStorageNotConfigured)
+        {
+            logger.LogWarning(
+                exception, "Backup {BackupId} is in {StorageType} storage, which is not configured", backup.Id, backup.StorageType);
             return new CreateRestoreResult(CreateRestoreStatus.StorageNotConfigured);
         }
 
@@ -137,7 +144,7 @@ public enum CreateRestoreStatus
     /// <summary>Not accepted because the backup is not <c>completed</c>.</summary>
     BackupNotCompleted,
 
-    /// <summary>Not accepted because the backup is in a storage the server is not configured to use.</summary>
+    /// <summary>Not accepted because the server has no usable settings for the storage the backup is in.</summary>
     StorageNotConfigured,
 
     /// <summary>Not accepted because the backup's database is not <c>ready</c>.</summary>

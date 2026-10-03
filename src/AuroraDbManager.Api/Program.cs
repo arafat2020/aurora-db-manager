@@ -99,8 +99,10 @@ builder.Services.AddOptions<BackupOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<BackupOptions>, BackupOptionsValidator>();
 
-// Both storages exist; Backups:StorageType alone decides which one new backups go to. The S3
-// client is created on first use, so local storage needs no S3 settings and no AWS credentials.
+// Both storages exist. Backups:StorageType alone decides which one new backups go to: that
+// default is what IBackupStorage resolves to. An existing backup is always handled in the storage
+// its own record names, through the resolver. The S3 client is created on first use, so a server
+// that never touches an S3 backup needs no S3 settings and no AWS credentials.
 builder.Services.AddSingleton<IArtifactHasher, Sha256ArtifactHasher>();
 builder.Services.AddSingleton<LocalBackupStorage>();
 builder.Services.AddSingleton<IS3ObjectClient, AwsS3ObjectClient>();
@@ -111,6 +113,7 @@ builder.Services.AddSingleton<IBackupStorage>(services =>
         BackupStorageType.S3 => services.GetRequiredService<S3BackupStorage>(),
         _ => services.GetRequiredService<LocalBackupStorage>()
     });
+builder.Services.AddSingleton<IBackupStorageResolver, BackupStorageResolver>();
 builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
 builder.Services.AddScoped<IBackupManager, PostgreSqlBackupManager>();
 builder.Services.AddScoped<IBackupManager, MySqlBackupManager>();

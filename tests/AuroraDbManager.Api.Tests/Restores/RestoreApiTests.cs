@@ -195,11 +195,12 @@ public sealed class RestoreApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Restore_BackupInAStorageTheServerIsNotConfiguredWith_IsRejected()
+    public async Task Restore_BackupInAStorageTheServerHasNoSettingsFor_IsRejected()
     {
         var instanceId = await _factory.CreateRunningInstanceAsync(_client);
         var databaseId = await _factory.CreateReadyDatabaseAsync(_client, instanceId, "app");
-        // Stored in S3 when the server used S3; the server now stores backups locally.
+        // Stored in S3 when the server used S3; the server now stores backups locally and has
+        // no S3 settings at all.
         var backupId = await _factory.WithDbAsync(async db =>
         {
             var backup = Backup.Create(databaseId, BackupStorageType.S3, DateTime.UtcNow);
@@ -472,7 +473,7 @@ public sealed class RestoreApiTests : IDisposable
                 .Options);
         var service = new RestoreService(
             db,
-            services.GetRequiredService<IBackupStorage>(),
+            services.GetRequiredService<IBackupStorageResolver>(),
             services.GetRequiredService<JobQueue>(),
             services.GetRequiredService<IOptions<JobOptions>>(),
             TimeProvider.System,

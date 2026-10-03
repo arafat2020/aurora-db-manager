@@ -14,14 +14,14 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// <c>PGPASSFILE</c>; <c>--no-password</c> makes <c>pg_dump</c> fail rather than ask for one.
 /// </summary>
 public sealed class PostgreSqlBackupManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
     IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<PostgreSqlBackupManager> logger)
-    : DumpBackupManager(storage, endpoints, secrets, processes, hasher, options, logger)
+    : DumpBackupManager(storages, endpoints, secrets, processes, hasher, options, logger)
 {
     private const string AdminUser = PostgresDumpFormat.AdminUser;
 

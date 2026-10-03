@@ -487,10 +487,10 @@ public sealed class S3BackupJobTests : IDisposable
     }
 
     [Fact]
-    public async Task BackupRequestedForAnotherStorageThanTheConfiguredOne_IsNotQuietlyStoredElsewhere()
+    public async Task BackupRequestedWhileTheDefaultWasLocal_IsStoredLocally_EvenThoughTheDefaultIsNowS3()
     {
         var (instanceId, databaseId) = await CreateReadyDatabaseAsync();
-        // Requested while the server stored backups locally; the server now uses S3.
+        // Requested while the server stored backups locally; the server's default is now S3.
         var (backupId, jobId) = await _factory.WithDbAsync(async db =>
         {
             var backup = Backup.Create(databaseId, BackupStorageType.Local, DateTime.UtcNow);
@@ -503,11 +503,14 @@ public sealed class S3BackupJobTests : IDisposable
 
         await _factory.ProcessJobAsync(jobId);
 
-        Assert.Equal("BACKUP_INVALID_STATE", await JobErrorCodeAsync(jobId));
-        Assert.Equal("failed", (await _client.GetBackupAsync(backupId)).Status());
-        Assert.Equal(0, Tools.RunCount);
+        // It goes where its own record says, not where new backups go now.
+        Assert.Equal("completed", (await _client.GetJobAsync(jobId)).Status());
+        var backup = await _client.GetBackupAsync(backupId);
+        Assert.Equal("completed", backup.Status());
+        Assert.Equal("local", backup.GetProperty("storageType").GetString());
+        Assert.Equal([_factory.BackupFilePath(instanceId, databaseId, backupId, "dump")], _factory.BackupFiles());
         Assert.Empty(Store.ObjectsIn());
-        Assert.Empty(_factory.BackupFiles());
+        Assert.Equal(0, Store.UploadCount);
     }
 
     // --- Lifecycle guards ---------------------------------------------------------------------

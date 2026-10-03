@@ -40,7 +40,7 @@ namespace AuroraDbManager.Api.Infrastructure.Restores;
 /// </para>
 /// </remarks>
 public sealed partial class PostgreSqlRestoreManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
@@ -48,7 +48,7 @@ public sealed partial class PostgreSqlRestoreManager(
     IOptions<BackupOptions> options,
     ILogger<PostgreSqlRestoreManager> logger,
     Func<string, DbConnection>? connectionFactory = null)
-    : DumpRestoreManager(storage, endpoints, secrets, processes, hasher, options, logger)
+    : DumpRestoreManager(storages, endpoints, secrets, processes, hasher, options, logger)
 {
     /// <summary>Ends every other session connected to the database this session is on.</summary>
     public const string TerminateSessionsSql =

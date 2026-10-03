@@ -42,7 +42,7 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// </para>
 /// </remarks>
 public abstract class DumpBackupManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
@@ -75,14 +75,9 @@ public abstract class DumpBackupManager(
 
     public async Task<BackupArtifact> BackupAsync(Instance instance, Database database, Backup backup, CancellationToken cancellationToken)
     {
-        // A backup is stored where it was requested for. If the server's storage was changed
-        // while the backup waited, it is not quietly put somewhere else.
-        if (backup.StorageType != storage.Type)
-        {
-            throw new BackupOperationException(
-                BackupErrorCodes.BackupInvalidState,
-                "The backup was requested for a backup storage that is no longer the configured one.");
-        }
+        // A backup is stored where it was requested for: the storage its own record names, even
+        // if the server's default for new backups has changed since.
+        var storage = storages.Resolve(backup.StorageType);
 
         var location = new BackupLocation(instance.Id, database.Id, backup.Id, Extension);
 

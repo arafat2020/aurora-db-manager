@@ -19,6 +19,9 @@ public static class BackupErrorCodes
     /// <summary>The artifact could not be written to, or finalized in, the backup storage.</summary>
     public const string BackupStorageFailed = "BACKUP_STORAGE_FAILED";
 
+    /// <summary>The backup is in a storage the server has no usable settings for.</summary>
+    public const string BackupStorageNotConfigured = "BACKUP_STORAGE_NOT_CONFIGURED";
+
     /// <summary>The object storage could not be reached, or answered with a server error.</summary>
     public const string BackupStorageUnavailable = "BACKUP_STORAGE_UNAVAILABLE";
 

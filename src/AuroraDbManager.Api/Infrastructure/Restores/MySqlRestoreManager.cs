@@ -40,7 +40,7 @@ namespace AuroraDbManager.Api.Infrastructure.Restores;
 /// </para>
 /// </remarks>
 public sealed class MySqlRestoreManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
@@ -48,7 +48,7 @@ public sealed class MySqlRestoreManager(
     IOptions<BackupOptions> options,
     ILogger<MySqlRestoreManager> logger,
     Func<string, DbConnection>? connectionFactory = null)
-    : DumpRestoreManager(storage, endpoints, secrets, processes, hasher, options, logger)
+    : DumpRestoreManager(storages, endpoints, secrets, processes, hasher, options, logger)
 {
     private static readonly MySqlCommandBuilder Quoting = new();
 

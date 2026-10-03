@@ -18,7 +18,8 @@ namespace AuroraDbManager.Api.Infrastructure.Restores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Order of events.</b> (1) The artifact is fetched from the backup storage into the attempt's
+/// <b>Order of events.</b> (1) The artifact is fetched from the storage the backup is in, which
+/// the backup's own record names and which need not be the server's current default, into the attempt's
 /// own directory as a <c>.partial</c> file. (2) It must have exactly the size the backup records,
 /// the SHA-256 the backup records, and look like a dump of the engine; only then is it given its
 /// final name. A backup completed before checksums were recorded has none to compare with and is
@@ -43,7 +44,7 @@ namespace AuroraDbManager.Api.Infrastructure.Restores;
 /// </para>
 /// </remarks>
 public abstract class DumpRestoreManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
@@ -102,11 +103,16 @@ public abstract class DumpRestoreManager(
             throw new RestoreOperationException(RestoreErrorCodes.RestoreInvalidState, "The backup is not a completed backup of the database.");
         }
 
-        if (backup.StorageType != storage.Type)
+        // The storage the backup's own record names, whatever the server's default for new
+        // backups is now.
+        IBackupStorage storage;
+        try
         {
-            throw new RestoreOperationException(
-                RestoreErrorCodes.RestoreStorageFailed,
-                "The backup is in a backup storage that is not the configured one.");
+            storage = storages.Resolve(backup.StorageType);
+        }
+        catch (BackupOperationException exception)
+        {
+            throw new RestoreOperationException(exception.Code, exception.Message, exception);
         }
 
         InstanceEndpoint endpoint;
@@ -124,7 +130,7 @@ public abstract class DumpRestoreManager(
 
         try
         {
-            var artifactPath = await FetchArtifactAsync(backup, directory, cancellationToken);
+            var artifactPath = await FetchArtifactAsync(storage, backup, directory, cancellationToken);
 
             await using var credentials = await TemporaryCredentialFile.CreateAsync(
                 CredentialFileContent(endpoint, database, password), cancellationToken);
@@ -151,7 +157,8 @@ public abstract class DumpRestoreManager(
             : options.Value.Restore.StagingPath);
 
     /// <summary>Copies the artifact out of the storage and returns its local path once it has been checked.</summary>
-    private async Task<string> FetchArtifactAsync(Backup backup, string directory, CancellationToken cancellationToken)
+    private async Task<string> FetchArtifactAsync(
+        IBackupStorage storage, Backup backup, string directory, CancellationToken cancellationToken)
     {
         var artifactPath = Path.Combine(directory, $"artifact.{Extension}");
         var partialPath = artifactPath + StagingSuffix;

@@ -19,14 +19,14 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// the backup timeout.
 /// </remarks>
 public sealed class MySqlBackupManager(
-    IBackupStorage storage,
+    IBackupStorageResolver storages,
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
     IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<MySqlBackupManager> logger)
-    : DumpBackupManager(storage, endpoints, secrets, processes, hasher, options, logger)
+    : DumpBackupManager(storages, endpoints, secrets, processes, hasher, options, logger)
 {
     private const string AdminUser = MySqlDumpFormat.AdminUser;
 

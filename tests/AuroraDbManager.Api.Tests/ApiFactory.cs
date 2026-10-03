@@ -80,8 +80,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     /// <summary>The real artifact hasher, which a test can make fail or hold.</summary>
     public FaultInjectingHasher Hasher { get; } = new();
 
-    /// <summary>The object store behind S3 backup storage. Unused unless a test selects that storage.</summary>
-    public FakeS3ObjectStore ObjectStore { get; } = new();
+    /// <summary>
+    /// The object store behind S3 backup storage. Unused unless a backup is in that storage. Can
+    /// be given, so a second factory finds the objects a first one stored, as a restarted
+    /// application finds its bucket.
+    /// </summary>
+    public FakeS3ObjectStore ObjectStore { get; init; } = new();
 
     /// <summary>
     /// The databases the restore managers connect to, to empty and to verify them: every statement

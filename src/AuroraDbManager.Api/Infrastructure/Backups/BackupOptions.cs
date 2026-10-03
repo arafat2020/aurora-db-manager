@@ -9,7 +9,8 @@ public sealed class BackupOptions
 
     /// <summary>
     /// Where new backups are stored: <c>local</c> or <c>s3</c>. Only ever what is written here;
-    /// nothing about the environment selects a storage.
+    /// nothing about the environment selects a storage. It does not affect backups that exist:
+    /// each of those stays in, and is restored from, the storage it was made for.
     /// </summary>
     public BackupStorageType StorageType { get; set; } = BackupStorageType.Local;
 
@@ -30,6 +31,16 @@ public sealed class BackupOptions
     /// </summary>
     public int ConnectTimeoutSeconds { get; set; } = 10;
 
+    /// <summary>Returns what is wrong with the settings of one storage, or null if that storage is usable.</summary>
+    public string? StorageProblem(BackupStorageType storageType) => storageType switch
+    {
+        BackupStorageType.Local => string.IsNullOrWhiteSpace(Local.RootPath)
+            ? "Backups:Local:RootPath is required for local backup storage."
+            : null,
+        BackupStorageType.S3 => S3.Validate(),
+        _ => "Unknown backup storage type."
+    };
+
     /// <summary>Returns what is wrong with the settings, or null if they are usable.</summary>
     public string? Validate()
     {
@@ -38,15 +49,11 @@ public sealed class BackupOptions
             return "Backups:StorageType must be 'local' or 's3'.";
         }
 
-        // Only the selected storage has to be configured.
-        if (StorageType == BackupStorageType.Local && string.IsNullOrWhiteSpace(Local.RootPath))
+        // Only the default storage has to be configured for the application to start. The other
+        // one is checked when a backup that is in it is used.
+        if (StorageProblem(StorageType) is { } storageError)
         {
-            return "Backups:Local:RootPath is required when Backups:StorageType is 'local'.";
-        }
-
-        if (StorageType == BackupStorageType.S3 && S3.Validate() is { } s3Error)
-        {
-            return s3Error;
+            return storageError;
         }
 
         if (string.IsNullOrWhiteSpace(Tools.PgDumpPath) || string.IsNullOrWhiteSpace(Tools.MySqlDumpPath))
@@ -143,12 +150,12 @@ public sealed class S3BackupOptions
     {
         if (string.IsNullOrWhiteSpace(Bucket))
         {
-            return "Backups:S3:Bucket is required when Backups:StorageType is 's3'.";
+            return "Backups:S3:Bucket is required for S3 backup storage.";
         }
 
         if (string.IsNullOrWhiteSpace(Region))
         {
-            return "Backups:S3:Region is required when Backups:StorageType is 's3'.";
+            return "Backups:S3:Region is required for S3 backup storage.";
         }
 
         if (!string.IsNullOrWhiteSpace(Endpoint)

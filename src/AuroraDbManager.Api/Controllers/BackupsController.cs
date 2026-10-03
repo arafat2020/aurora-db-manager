@@ -91,8 +91,9 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
     /// Before anything in the database is changed, the backup is fetched and checked against its
     /// recorded size and SHA-256; a backup that does not match is not restored. Backups completed
     /// before checksums were recorded are checked by size and format only.
-    /// The backup must be <c>completed</c> (<c>409 BACKUP_NOT_COMPLETED</c>) and in the storage
-    /// the server is configured with (<c>409 BACKUP_STORAGE_NOT_CONFIGURED</c>), its database
+    /// The backup is read from the storage it was made in, whichever storage new backups go to
+    /// now. The backup must be <c>completed</c> (<c>409 BACKUP_NOT_COMPLETED</c>) and the server
+    /// must have settings for that storage (<c>409 BACKUP_STORAGE_NOT_CONFIGURED</c>), its database
     /// <c>ready</c> (<c>409 DATABASE_NOT_READY</c>) and the instance <c>running</c>
     /// (<c>409 INSTANCE_NOT_READY</c>). A database has one restore at a time
     /// (<c>409 RESTORE_OPERATION_IN_PROGRESS</c>) and is not restored while it is being backed up
@@ -115,7 +116,7 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
                 "Only a completed backup can be restored.")),
             CreateRestoreStatus.StorageNotConfigured => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.BackupStorageNotConfigured,
-                "The backup is in a backup storage the server is not configured to use.")),
+                "The backup storage the backup belongs to is not configured on the server.")),
             CreateRestoreStatus.DatabaseNotReady => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.DatabaseNotReady,
                 "A backup can only be restored into a ready database.")),

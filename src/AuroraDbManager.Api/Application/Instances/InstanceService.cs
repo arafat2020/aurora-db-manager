@@ -75,11 +75,12 @@ public sealed class InstanceService(
     /// Deletes an instance together with its database server and data. An instance that is still
     /// provisioning is not deleted: its job may be creating resources at this very moment, and
     /// removing the metadata would leave them behind with nothing pointing to them. Nor is one with
-    /// a database being created or deleted: that job is working inside the server right now.
+    /// a database being created, deleted or backed up: that job is working inside the server right now.
     /// </summary>
     /// <remarks>
     /// The instance's databases are not dropped one by one. They live in the instance's data
-    /// volume and are destroyed with it; their metadata goes with the instance row.
+    /// volume and are destroyed with it; their metadata, and that of their backups, goes with the
+    /// instance row. Backup files are not removed.
     /// </remarks>
     /// <exception cref="InstanceProvisioningException">
     /// The instance's resources could not be removed. Its metadata is kept so the delete can be retried.
@@ -97,12 +98,20 @@ public sealed class InstanceService(
             return DeleteInstanceResult.Provisioning;
         }
 
-        var hasUnfinishedDatabaseJob = await db.Jobs.AnyAsync(
-            j => j.InstanceId == id
+        var unfinishedDatabaseJobTypes = await db.Jobs
+            .Where(j => j.InstanceId == id
                 && j.DatabaseId != null
-                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
-            cancellationToken);
-        if (hasUnfinishedDatabaseJob)
+                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running))
+            .Select(j => j.Type)
+            .ToListAsync(cancellationToken);
+
+        // A backup is reading from the server; the server is not removed under it.
+        if (unfinishedDatabaseJobTypes.Contains(JobType.BackupDatabase))
+        {
+            return DeleteInstanceResult.BackupInProgress;
+        }
+
+        if (unfinishedDatabaseJobTypes.Count > 0)
         {
             return DeleteInstanceResult.DatabaseOperationInProgress;
         }
@@ -125,5 +134,8 @@ public enum DeleteInstanceResult
     Provisioning,
 
     /// <summary>Not deleted because one of the instance's databases is being created or deleted.</summary>
-    DatabaseOperationInProgress
+    DatabaseOperationInProgress,
+
+    /// <summary>Not deleted because one of the instance's databases is being backed up.</summary>
+    BackupInProgress
 }

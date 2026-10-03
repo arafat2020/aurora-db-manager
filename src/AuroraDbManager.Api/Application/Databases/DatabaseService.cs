@@ -119,7 +119,8 @@ public sealed class DatabaseService(
 
     /// <summary>
     /// Starts deleting a <c>ready</c> database: marks it <c>deleting</c> and creates the job that
-    /// drops it. The row stays until the engine has dropped the database; the job removes it then.
+    /// drops it. The row stays until the engine has dropped the database; the job removes it then,
+    /// and with it the metadata of the database's backups. The backup files themselves are kept.
     /// </summary>
     public async Task<DeleteDatabaseResult> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -141,6 +142,12 @@ public sealed class DatabaseService(
             return new DeleteDatabaseResult(DeleteDatabaseStatus.InstanceNotReady);
         }
 
+        // A backup reads the database for as long as it runs; the database is not dropped under it.
+        if (await HasUnfinishedBackupAsync(id, cancellationToken))
+        {
+            return new DeleteDatabaseResult(DeleteDatabaseStatus.BackupInProgress);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         database.MarkDeleting(now);
         var job = Job.Create(JobType.DeleteDatabase, database.InstanceId, jobOptions.Value.MaxAttempts, now, database.Id);
@@ -153,9 +160,14 @@ public sealed class DatabaseService(
         }
         catch (DbUpdateException)
         {
-            // A concurrent request changed the database first: the status is a concurrency token,
-            // and a database can have only one unfinished job. Report what it is doing now.
+            // A concurrent request got in first: the status is a concurrency token, and a
+            // database can have only one unfinished job, a backup included. Report what it is doing now.
             db.ChangeTracker.Clear();
+
+            if (await HasUnfinishedBackupAsync(id, cancellationToken))
+            {
+                return new DeleteDatabaseResult(DeleteDatabaseStatus.BackupInProgress);
+            }
 
             var current = await db.Databases.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
             if (current is null)
@@ -198,6 +210,13 @@ public sealed class DatabaseService(
 
     private static DatabaseOperationResponse ToResponse(Database database, Job job) =>
         new(DatabaseResponse.From(database), JobResponse.From(job));
+
+    private Task<bool> HasUnfinishedBackupAsync(Guid databaseId, CancellationToken cancellationToken) =>
+        db.Jobs.AnyAsync(
+            j => j.DatabaseId == databaseId
+                && j.Type == JobType.BackupDatabase
+                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
+            cancellationToken);
 
     private Task<bool> NameExistsAsync(Guid instanceId, string name, CancellationToken cancellationToken) =>
         db.Databases.AnyAsync(d => d.InstanceId == instanceId && d.Name == name, cancellationToken);
@@ -243,5 +262,8 @@ public enum DeleteDatabaseStatus
     Failed,
 
     /// <summary>Not accepted because the instance is not running.</summary>
-    InstanceNotReady
+    InstanceNotReady,
+
+    /// <summary>Not accepted because a backup of the database is not finished yet.</summary>
+    BackupInProgress
 }

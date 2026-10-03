@@ -1,12 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
+using AuroraDbManager.Api.Application.Jobs.BackupDatabase;
 using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
 using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Errors;
+using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
@@ -46,6 +49,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InstanceService>();
 builder.Services.AddScoped<DatabaseService>();
+builder.Services.AddScoped<BackupService>();
 
 builder.Services.AddOptions<JobOptions>()
     .Bind(builder.Configuration.GetSection(JobOptions.SectionName))
@@ -62,6 +66,7 @@ builder.Services.AddSingleton<InstanceReconciler>();
 builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
 builder.Services.AddScoped<IJobHandler, CreateDatabaseHandler>();
 builder.Services.AddScoped<IJobHandler, DeleteDatabaseHandler>();
+builder.Services.AddScoped<IJobHandler, BackupDatabaseHandler>();
 
 builder.Services.AddOptions<DockerOptions>()
     .Bind(builder.Configuration.GetSection(DockerOptions.SectionName))
@@ -79,6 +84,16 @@ builder.Services.AddOptions<DatabaseManagerOptions>()
 builder.Services.AddSingleton<IInstanceEndpointResolver, DockerInstanceEndpointResolver>();
 builder.Services.AddScoped<IDatabaseManager, PostgreSqlDatabaseManager>();
 builder.Services.AddScoped<IDatabaseManager, MySqlDatabaseManager>();
+
+// Backups run the engines' dump programs on this machine and keep the artifacts on its filesystem.
+builder.Services.AddOptions<BackupOptions>()
+    .Bind(builder.Configuration.GetSection(BackupOptions.SectionName))
+    .Validate(options => options.Validate() is null, "The Backups configuration is invalid: Backups:Local:RootPath and the tool paths are required, and the timeouts must be in range.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<IBackupStorage, LocalBackupStorage>();
+builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
+builder.Services.AddScoped<IBackupManager, PostgreSqlBackupManager>();
+builder.Services.AddScoped<IBackupManager, MySqlBackupManager>();
 
 // Encrypts instance passwords at rest; see ProtectedInstanceSecretStore.
 builder.Services.AddDataProtection().SetApplicationName("AuroraDbManager");

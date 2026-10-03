@@ -480,3 +480,12 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local backup storage of a development run (Backups:Local:RootPath)
+.aurora/
+
+# The template rule "Backup*/" above is meant for Visual Studio upgrade folders; it must not
+# swallow the source of the backup feature.
+!src/**/Backups/
+!src/**/BackupDatabase/
+!tests/**/Backups/

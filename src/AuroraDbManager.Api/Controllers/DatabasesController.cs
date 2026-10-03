@@ -75,8 +75,10 @@ public sealed class DatabasesController(DatabaseService databases) : ControllerB
     /// visible until that has succeeded and returns <c>404</c> afterwards. If the job fails for good
     /// the database becomes <c>failed</c> and is kept. A database that is <c>creating</c>,
     /// <c>deleting</c> or <c>failed</c> is rejected with <c>409 DATABASE_CREATING</c>,
-    /// <c>DATABASE_DELETING</c> or <c>DATABASE_FAILED</c>, and one whose instance is not
-    /// <c>running</c> with <c>409 INSTANCE_NOT_READY</c>.
+    /// <c>DATABASE_DELETING</c> or <c>DATABASE_FAILED</c>, one whose instance is not
+    /// <c>running</c> with <c>409 INSTANCE_NOT_READY</c>, and one with an unfinished backup with
+    /// <c>409 BACKUP_OPERATION_IN_PROGRESS</c>. Deleting a database removes the records of its
+    /// backups; the backup files stay in the backup storage.
     /// </remarks>
     [HttpDelete(DatabaseRoute)]
     [ProducesResponseType<DatabaseOperationResponse>(StatusCodes.Status202Accepted)]
@@ -99,6 +101,9 @@ public sealed class DatabasesController(DatabaseService databases) : ControllerB
                 ErrorCodes.DatabaseFailed,
                 "Database is in a failed state and cannot be deleted.")),
             DeleteDatabaseStatus.InstanceNotReady => InstanceNotReady(),
+            DeleteDatabaseStatus.BackupInProgress => Conflict(ApiErrorResponse.Create(
+                ErrorCodes.BackupOperationInProgress,
+                "Database cannot be deleted while a backup of it is in progress.")),
             _ => DatabaseNotFound()
         };
     }

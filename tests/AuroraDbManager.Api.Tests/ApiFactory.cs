@@ -1,10 +1,13 @@
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
+using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
+using AuroraDbManager.Api.Tests.Backups;
 using AuroraDbManager.Api.Tests.Databases;
 using AuroraDbManager.Api.Tests.Docker;
 using Microsoft.AspNetCore.DataProtection;
@@ -15,6 +18,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace AuroraDbManager.Api.Tests;
 
@@ -22,7 +26,8 @@ namespace AuroraDbManager.Api.Tests;
 /// Hosts the API in-process with the system database swapped for a private SQLite file, the
 /// provisioner swapped for a <see cref="FakeInstanceProvisioner"/> and the database managers
 /// swapped for those of <see cref="FakeDatabaseServers"/>, so tests need neither a PostgreSQL
-/// server nor Docker. A file rather than an in-memory database, because the job worker
+/// server nor Docker. Backups run the real backup managers and the real local storage, on a
+/// private directory, with the dump programs swapped for <see cref="FakeDumpTools"/>. A file rather than an in-memory database, because the job worker
 /// and the requests use the database concurrently and each needs its own connection.
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>
@@ -65,6 +70,44 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     public FakeDatabaseServers DatabaseServers { get; } = new();
 
+    public FakeDumpTools DumpTools { get; } = new();
+
+    public FakeInstanceEndpoints Endpoints { get; } = new();
+
+    /// <summary>Everything the application logged.</summary>
+    public RecordingLoggerProvider Logs { get; } = new();
+
+    /// <summary>
+    /// A backup root directory to use instead of a private one. Like <see cref="DatabasePath"/>
+    /// it is not deleted with the factory, so a restarted application finds what the first left.
+    /// </summary>
+    public string? BackupRootPath { get; init; }
+
+    /// <summary>Changes the backup settings after the test defaults were applied.</summary>
+    public Action<BackupOptions>? ConfigureBackups { get; init; }
+
+    private readonly string _ownBackupRoot =
+        Path.Combine(Path.GetTempPath(), $"aurora-db-manager-tests-backups-{Guid.NewGuid():N}");
+
+    public string BackupRoot => BackupRootPath ?? _ownBackupRoot;
+
+    /// <summary>The path the local storage keeps a backup's artifact at.</summary>
+    public string BackupFilePath(Guid instanceId, Guid databaseId, Guid backupId, string extension) =>
+        ((LocalBackupStorage)Services.GetRequiredService<IBackupStorage>())
+            .PathFor(new BackupLocation(instanceId, databaseId, backupId, extension));
+
+    /// <summary>Every file under the backup root, finished or not.</summary>
+    public IReadOnlyList<string> BackupFiles() =>
+        Directory.Exists(BackupRoot) ? Directory.GetFiles(BackupRoot, "*", SearchOption.AllDirectories) : [];
+
+    /// <summary>The administrator password of an instance, as the managers get it.</summary>
+    public async Task<string> AdminPasswordAsync(Guid instanceId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IInstanceSecretStore>()
+            .GetOrCreateAdminPasswordAsync(instanceId, default);
+    }
+
     public FakeDockerEngine Docker { get; } = new();
 
     /// <summary>Processes a job the way the worker would, on the calling test's own schedule.</summary>
@@ -106,6 +149,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         await ProcessJobAsync(jobId);
         Assert.Equal("ready", (await client.GetDatabaseAsync(databaseId)).Status());
         return databaseId;
+    }
+
+    /// <summary>Requests a backup and runs its job, leaving it <c>completed</c>.</summary>
+    public async Task<Guid> CreateCompletedBackupAsync(HttpClient client, Guid databaseId)
+    {
+        var (backupId, jobId) = await client.CreateBackupAsync(databaseId);
+        await ProcessJobAsync(jobId);
+        Assert.Equal("completed", (await client.GetBackupAsync(backupId)).Status());
+        return backupId;
     }
 
     // No API moves an instance to "stopped" or back yet, so the status is written directly.
@@ -162,8 +214,20 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IInstanceProvisioner>(Provisioner);
             }
 
+            services.AddSingleton<ILoggerProvider>(Logs);
+            services.Configure<BackupOptions>(options =>
+            {
+                options.Local.RootPath = BackupRoot;
+                ConfigureBackups?.Invoke(options);
+            });
+
             if (RealDockerNetwork is null)
             {
+                services.RemoveAll<IInstanceEndpointResolver>();
+                services.AddSingleton<IInstanceEndpointResolver>(Endpoints);
+                services.RemoveAll<IProcessRunner>();
+                services.AddSingleton<IProcessRunner>(DumpTools);
+
                 services.RemoveAll<IDatabaseManager>();
                 services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Postgres));
                 services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Mysql));
@@ -205,6 +269,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         if (disposing)
         {
             TempDatabase.Delete(_ownDatabasePath);
+            if (Directory.Exists(_ownBackupRoot))
+            {
+                Directory.Delete(_ownBackupRoot, recursive: true);
+            }
         }
     }
 }

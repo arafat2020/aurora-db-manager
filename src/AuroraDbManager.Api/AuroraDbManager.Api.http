@@ -59,3 +59,19 @@ Accept: application/json
 ###
 
 DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}
+
+###
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backups
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backups?page=1&pageSize=20
+Accept: application/json
+
+###
+
+@backupId = 00000000-0000-0000-0000-000000000000
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}
+Accept: application/json

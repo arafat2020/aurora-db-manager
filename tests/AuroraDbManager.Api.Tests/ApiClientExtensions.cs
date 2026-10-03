@@ -9,6 +9,9 @@ internal static class ApiClientExtensions
     public const string InstancesUrl = "/api/v1/instances";
     public const string JobsUrl = "/api/v1/jobs";
     public const string DatabasesUrl = "/api/v1/databases";
+    public const string BackupsUrl = "/api/v1/backups";
+
+    public static string DatabaseBackupsUrl(Guid databaseId) => $"{DatabasesUrl}/{databaseId}/backups";
 
     public static string InstanceDatabasesUrl(Guid instanceId) => $"{InstancesUrl}/{instanceId}/databases";
 
@@ -53,6 +56,17 @@ internal static class ApiClientExtensions
 
     public static async Task<JsonElement> GetDatabaseAsync(this HttpClient client, Guid id) =>
         await (await client.GetAsync($"{DatabasesUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);
+
+    /// <summary>Requests a backup and returns the ids of the backup and of its job.</summary>
+    public static async Task<(Guid BackupId, Guid JobId)> CreateBackupAsync(this HttpClient client, Guid databaseId)
+    {
+        var response = await client.PostAsync(DatabaseBackupsUrl(databaseId), content: null);
+        var body = await response.ReadJsonAsync(HttpStatusCode.Accepted);
+        return (body.GetProperty("backup").GetProperty("id").GetGuid(), body.GetProperty("job").GetProperty("id").GetGuid());
+    }
+
+    public static async Task<JsonElement> GetBackupAsync(this HttpClient client, Guid id) =>
+        await (await client.GetAsync($"{BackupsUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);
 
     public static async Task<JsonElement> GetJobAsync(this HttpClient client, Guid id) =>
         await (await client.GetAsync($"{JobsUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);

@@ -19,6 +19,10 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             table.HasCheckConstraint(
                 "ck_jobs_database_id",
                 $"(type IN ({DatabaseJobTypes}) AND database_id IS NOT NULL) OR (type NOT IN ({DatabaseJobTypes}) AND database_id IS NULL)");
+            // Backup jobs name their backup; every other job has none.
+            table.HasCheckConstraint(
+                "ck_jobs_backup_id",
+                $"(type = {BackupJobType} AND backup_id IS NOT NULL) OR (type <> {BackupJobType} AND backup_id IS NULL)");
         });
 
         builder.HasKey(j => j.Id).HasName("pk_jobs");
@@ -35,6 +39,8 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(j => j.InstanceId).HasColumnName("instance_id");
         // Not a foreign key: a delete_database job removes its database and must outlive it.
         builder.Property(j => j.DatabaseId).HasColumnName("database_id");
+        // Not a foreign key either: the job is the record of the work and outlives the backup's metadata.
+        builder.Property(j => j.BackupId).HasColumnName("backup_id");
         builder.Property(j => j.Attempt).HasColumnName("attempt");
         builder.Property(j => j.MaxAttempts).HasColumnName("max_attempts");
         builder.Property(j => j.ErrorCode).HasColumnName("error_code").HasMaxLength(Job.ErrorCodeMaxLength);
@@ -67,7 +73,8 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasDatabaseName("ux_jobs_instance_id_type_unfinished");
 
         // A database has at most one unfinished job of any type: a create and a delete, or two of
-        // either, can never be in progress for the same database.
+        // either, can never be in progress for the same database. The same goes for backups: a
+        // database has one unfinished backup at most, and is never backed up while being deleted.
         builder.HasIndex(j => j.DatabaseId)
             .IsUnique()
             .HasFilter($"{Unfinished} AND database_id IS NOT NULL")
@@ -77,6 +84,8 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
     private static readonly string Unfinished =
         $"status IN ('{EnumStorage.ToDbValue(JobStatus.Pending)}', '{EnumStorage.ToDbValue(JobStatus.Running)}')";
 
+    private static readonly string BackupJobType = $"'{EnumStorage.ToDbValue(JobType.BackupDatabase)}'";
+
     private static readonly string DatabaseJobTypes =
-        $"'{EnumStorage.ToDbValue(JobType.CreateDatabase)}', '{EnumStorage.ToDbValue(JobType.DeleteDatabase)}'";
+        $"'{EnumStorage.ToDbValue(JobType.CreateDatabase)}', '{EnumStorage.ToDbValue(JobType.DeleteDatabase)}', {BackupJobType}";
 }

@@ -27,10 +27,14 @@ public sealed class Job
     public Guid InstanceId { get; private set; }
 
     /// <summary>
-    /// The database a <c>create_database</c> or <c>delete_database</c> job works on; null for every
-    /// other type. Kept after the database is gone, so a finished job still says what it was for.
+    /// The database a <c>create_database</c>, <c>delete_database</c> or <c>backup_database</c> job
+    /// works on; null for every other type. Kept after the database is gone, so a finished job
+    /// still says what it was for.
     /// </summary>
     public Guid? DatabaseId { get; private set; }
+
+    /// <summary>The backup a <c>backup_database</c> job produces; null for every other type.</summary>
+    public Guid? BackupId { get; private set; }
 
     /// <summary>
     /// Number of the current attempt; 0 until the job is first picked up. An attempt that was
@@ -58,16 +62,25 @@ public sealed class Job
 
     public bool HasAttemptsRemaining => Attempt < MaxAttempts;
 
-    public static Job Create(JobType type, Guid instanceId, int maxAttempts, DateTime utcNow, Guid? databaseId = null)
+    public static Job Create(
+        JobType type, Guid instanceId, int maxAttempts, DateTime utcNow, Guid? databaseId = null, Guid? backupId = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAttempts);
 
-        var worksOnDatabase = type is JobType.CreateDatabase or JobType.DeleteDatabase;
+        var worksOnDatabase = type is JobType.CreateDatabase or JobType.DeleteDatabase or JobType.BackupDatabase;
         if (worksOnDatabase != databaseId.HasValue)
         {
             throw new ArgumentException(
                 worksOnDatabase ? $"A {type} job needs a database." : $"A {type} job does not work on a database.",
                 nameof(databaseId));
+        }
+
+        var producesBackup = type is JobType.BackupDatabase;
+        if (producesBackup != backupId.HasValue)
+        {
+            throw new ArgumentException(
+                producesBackup ? $"A {type} job needs a backup." : $"A {type} job does not produce a backup.",
+                nameof(backupId));
         }
 
         return new Job
@@ -77,6 +90,7 @@ public sealed class Job
             Status = JobStatus.Pending,
             InstanceId = instanceId,
             DatabaseId = databaseId,
+            BackupId = backupId,
             Attempt = 0,
             MaxAttempts = maxAttempts,
             CreatedAt = utcNow,

@@ -4,13 +4,14 @@ using AuroraDbManager.Api.Domain.Jobs;
 namespace AuroraDbManager.Api.Application.Jobs;
 
 /// <param name="Id">Unique identifier of the job.</param>
-/// <param name="Type">Kind of work: <c>provision_instance</c>, <c>create_database</c> or <c>delete_database</c>.</param>
+/// <param name="Type">Kind of work: <c>provision_instance</c>, <c>create_database</c>, <c>delete_database</c> or <c>backup_database</c>.</param>
 /// <param name="Status">
 /// Lifecycle status: <c>pending</c>, <c>running</c>, <c>completed</c> or <c>failed</c>. A job stays
 /// <c>running</c> while it retries; <c>failed</c> means all attempts were used.
 /// </param>
 /// <param name="InstanceId">Instance the job works on.</param>
-/// <param name="DatabaseId">Database the job works on. Only present on <c>create_database</c> and <c>delete_database</c> jobs.</param>
+/// <param name="DatabaseId">Database the job works on. Only present on <c>create_database</c>, <c>delete_database</c> and <c>backup_database</c> jobs.</param>
+/// <param name="BackupId">Backup the job produces. Only present on <c>backup_database</c> jobs.</param>
 /// <param name="Attempt">Number of the current attempt; 0 until first picked up. An attempt interrupted by a restart is not counted.</param>
 /// <param name="MaxAttempts">Attempts allowed before the job is marked failed.</param>
 /// <param name="CreatedAt">UTC time the job was created.</param>
@@ -25,6 +26,8 @@ public sealed record JobResponse(
     Guid InstanceId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? DatabaseId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? BackupId,
     int Attempt,
     int MaxAttempts,
     DateTime CreatedAt,
@@ -39,6 +42,7 @@ public sealed record JobResponse(
         job.Status,
         job.InstanceId,
         job.DatabaseId,
+        job.BackupId,
         job.Attempt,
         job.MaxAttempts,
         job.CreatedAt,

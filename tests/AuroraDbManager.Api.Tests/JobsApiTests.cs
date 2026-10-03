@@ -40,6 +40,7 @@ public sealed class JobsApiTests : IDisposable
         Assert.Equal(JsonValueKind.Null, job.GetProperty("error").ValueKind);
         // A provisioning job works on no database, so the field is left out altogether.
         Assert.False(job.TryGetProperty("databaseId", out _));
+        Assert.False(job.TryGetProperty("backupId", out _));
     }
 
     [Fact]

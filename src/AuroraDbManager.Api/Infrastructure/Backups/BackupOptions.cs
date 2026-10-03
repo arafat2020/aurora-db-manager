@@ -22,6 +22,8 @@ public sealed class BackupOptions
 
     public RestoreOptions Restore { get; set; } = new();
 
+    public BackupSchedulerOptions Scheduler { get; set; } = new();
+
     /// <summary>How long one backup attempt may run before the backup program is stopped.</summary>
     public int TimeoutSeconds { get; set; } = 3600;
 
@@ -69,6 +71,11 @@ public sealed class BackupOptions
         if (Restore.TimeoutSeconds is < 1 or > 604_800)
         {
             return "Backups:Restore:TimeoutSeconds must be between 1 and 604800.";
+        }
+
+        if (Scheduler.PollIntervalSeconds is < 1 or > 3600)
+        {
+            return "Backups:Scheduler:PollIntervalSeconds must be between 1 and 3600.";
         }
 
         if (Restore.LockTimeoutSeconds is < 1 or > 3600)
@@ -184,6 +191,16 @@ public sealed class S3BackupOptions
 
         return null;
     }
+}
+
+/// <summary>Settings of the backup scheduler, bound from <c>Backups:Scheduler</c>.</summary>
+public sealed class BackupSchedulerOptions
+{
+    /// <summary>
+    /// How often the scheduler looks for schedules that are due. A scheduled backup starts at
+    /// most this long after its time.
+    /// </summary>
+    public int PollIntervalSeconds { get; set; } = 30;
 }
 
 /// <summary>Settings for restoring backups, bound from <c>Backups:Restore</c>.</summary>

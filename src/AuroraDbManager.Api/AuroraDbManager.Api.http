@@ -80,3 +80,34 @@ Accept: application/json
 
 # Replaces the contents of the backup's database with the backup. Destructive.
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}/restore
+
+###
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Content-Type: application/json
+
+{
+  "cronExpression": "0 2 * * *",
+  "timeZoneId": "Asia/Dhaka",
+  "enabled": true
+}
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Accept: application/json
+
+###
+
+PUT {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Content-Type: application/json
+
+{
+  "cronExpression": "0 */6 * * *",
+  "timeZoneId": "UTC",
+  "enabled": true
+}
+
+###
+
+DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule

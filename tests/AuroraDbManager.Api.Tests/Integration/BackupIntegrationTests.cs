@@ -365,6 +365,59 @@ public sealed class BackupIntegrationTests : IAsyncLifetime
             Assert.All(passwords, password => Assert.DoesNotContain(password, File.ReadAllText(file, System.Text.Encoding.Latin1))));
     }
 
+    // --- Scheduled ----------------------------------------------------------------------------
+
+    [DockerFact]
+    public async Task Postgres_ScheduledBackup_IsCreatedByTheScheduler_AndCarriedOutLikeAnyOtherBackup()
+    {
+        var (instanceId, databaseId) = await CreateDatabaseAsync("postgres", "16", "shop");
+        await PostgresAsync(instanceId, "shop", "create table customers (id int primary key, name text); insert into customers values (1, 'alice'), (2, 'bob');");
+
+        var scheduleUrl = $"{DatabasesUrl}/{databaseId}/backup-schedule";
+        var created = await (await _client.PostAsync(
+            scheduleUrl,
+            System.Net.Http.Json.JsonContent.Create(new { cronExpression = "0 2 * * *", timeZoneId = "Asia/Dhaka" }))).ReadJsonAsync(HttpStatusCode.Created);
+        var firstRun = created.GetProperty("nextRunAt").GetDateTimeOffset();
+        Assert.True(firstRun > DateTimeOffset.UtcNow);
+
+        // Not due: the scheduler leaves it alone.
+        Assert.Empty(await _factory.RunSchedulerAsync());
+        Assert.Empty(_factory.BackupFiles());
+
+        // The clock here is the real one (a real container is involved), so instead of waiting
+        // for 02:00 in Dhaka the stored occurrence is moved into the past: a schedule that is due.
+        var due = DateTime.UtcNow.AddMinutes(-1);
+        await _factory.WithDbAsync(db => db.BackupSchedules.ExecuteUpdateAsync(s => s.SetProperty(x => x.NextRunAt, due)));
+
+        var jobId = Assert.Single(await _factory.RunSchedulerAsync());
+        Assert.Equal("backup_database", (await _client.GetJobAsync(jobId)).GetProperty("type").GetString());
+        await _factory.ProcessJobAsync(jobId);
+
+        await AssertJobCompletedAsync(jobId);
+        var backupId = (await _client.GetJobAsync(jobId)).GetProperty("backupId").GetGuid();
+        var backup = await _client.GetBackupAsync(backupId);
+        Assert.Equal("completed", backup.Status());
+        Assert.Equal(databaseId, backup.GetProperty("databaseId").GetGuid());
+
+        // A real pg_dump archive of the real database, stored and checksummed as usual.
+        var path = _factory.BackupFilePath(instanceId, databaseId, backupId, "dump");
+        Assert.Equal([path], _factory.BackupFiles());
+        Assert.Equal(new FileInfo(path).Length, backup.GetProperty("sizeBytes").GetInt64());
+        Assert.Equal(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(path))),
+            backup.GetProperty("checksum").GetString());
+        AssertPrivate(path);
+        Assert.Contains("TABLE DATA public customers", await RunAsync("pg_restore", "--list", path));
+        Assert.Contains("alice", await RunAsync("pg_restore", "--data-only", "--file=-", path));
+
+        // The schedule moved on to an occurrence still to come, and nothing runs twice.
+        var schedule = await (await _client.GetAsync(scheduleUrl)).ReadJsonAsync(HttpStatusCode.OK);
+        Assert.Equal(firstRun, schedule.GetProperty("nextRunAt").GetDateTimeOffset());
+        Assert.Empty(await _factory.RunSchedulerAsync());
+        Assert.Single(_factory.BackupFiles());
+        Assert.Empty(CredentialFiles());
+    }
+
     // --- Helpers ------------------------------------------------------------------------------
 
     private async Task<(Guid InstanceId, Guid DatabaseId)> CreateDatabaseAsync(string engine, string version, string name)

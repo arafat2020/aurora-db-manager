@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
@@ -18,6 +19,7 @@ using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Infrastructure.Restores;
+using AuroraDbManager.Api.Infrastructure.Scheduling;
 using AuroraDbManager.Api.Infrastructure.Secrets;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -126,7 +128,13 @@ builder.Services.AddScoped<IRestoreManager, MySqlRestoreManager>();
 builder.Services.AddDataProtection().SetApplicationName("AuroraDbManager");
 builder.Services.AddScoped<IInstanceSecretStore, ProtectedInstanceSecretStore>();
 
+// Scheduled backups: a schedule only decides when; the backup itself is the ordinary job above.
+builder.Services.AddSingleton<IScheduleCalculator, CronosScheduleCalculator>();
+builder.Services.AddScoped<BackupScheduleService>();
+builder.Services.AddScoped<BackupScheduler>();
+
 builder.Services.AddHostedService<JobWorker>();
+builder.Services.AddHostedService<ScheduledBackupWorker>();
 
 var app = builder.Build();
 

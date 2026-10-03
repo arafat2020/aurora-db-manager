@@ -19,6 +19,10 @@ public static class ErrorCodes
     public const string BackupNotCompleted = "BACKUP_NOT_COMPLETED";
     public const string BackupStorageNotConfigured = "BACKUP_STORAGE_NOT_CONFIGURED";
     public const string RestoreOperationInProgress = "RESTORE_OPERATION_IN_PROGRESS";
+    public const string BackupScheduleNotFound = "BACKUP_SCHEDULE_NOT_FOUND";
+    public const string BackupScheduleAlreadyExists = "BACKUP_SCHEDULE_ALREADY_EXISTS";
+    public const string InvalidCronExpression = "INVALID_CRON_EXPRESSION";
+    public const string InvalidTimeZone = "INVALID_TIME_ZONE";
     public const string JobNotFound = "JOB_NOT_FOUND";
     public const string NotFound = "NOT_FOUND";
     public const string MethodNotAllowed = "METHOD_NOT_ALLOWED";

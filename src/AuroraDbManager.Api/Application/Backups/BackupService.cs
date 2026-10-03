@@ -26,44 +26,20 @@ public sealed class BackupService(
 {
     public async Task<CreateBackupResult> CreateAsync(Guid databaseId, CancellationToken cancellationToken)
     {
-        var database = await db.Databases.AsNoTracking().FirstOrDefaultAsync(d => d.Id == databaseId, cancellationToken);
-        if (database is null)
+        var prepared = await PrepareAsync(databaseId, cancellationToken);
+        if (prepared.Status != CreateBackupStatus.Accepted)
         {
-            return new CreateBackupResult(CreateBackupStatus.DatabaseNotFound);
+            return new CreateBackupResult(prepared.Status);
         }
-
-        if (database.Status != DatabaseStatus.Ready)
-        {
-            return new CreateBackupResult(CreateBackupStatus.DatabaseNotReady);
-        }
-
-        var instance = await db.Instances.AsNoTracking().FirstAsync(i => i.Id == database.InstanceId, cancellationToken);
-        if (instance.Status != InstanceStatus.Running)
-        {
-            return new CreateBackupResult(CreateBackupStatus.InstanceNotReady);
-        }
-
-        if (Rejection(await db.UnfinishedJobTypeAsync(databaseId, cancellationToken)) is { } busy)
-        {
-            return new CreateBackupResult(busy);
-        }
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var backup = Backup.Create(databaseId, storage.Type, now);
-        var job = Job.Create(
-            JobType.BackupDatabase, database.InstanceId, jobOptions.Value.MaxAttempts, now, databaseId, backup.Id);
-
-        // One SaveChanges is one transaction: the backup and its job are stored together or not at all.
-        db.Backups.Add(backup);
-        db.Jobs.Add(job);
 
         try
         {
+            // One SaveChanges is one transaction: the backup and its job are stored together or not at all.
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
-            // The checks above can be overtaken by a concurrent request. A database has only one
+            // The checks can be overtaken by a concurrent request. A database has only one
             // unfinished job, so whatever got in first, another backup, a restore or the
             // database's deletion, made the index refuse this job. Find out which it was.
             db.ChangeTracker.Clear();
@@ -73,31 +49,83 @@ public sealed class BackupService(
                 return new CreateBackupResult(concurrent);
             }
 
-            var current = await db.Databases.AsNoTracking().FirstOrDefaultAsync(d => d.Id == databaseId, cancellationToken);
-            if (current is null)
+            if (await EligibilityAsync(databaseId, cancellationToken) is { } ineligible)
             {
-                return new CreateBackupResult(CreateBackupStatus.DatabaseNotFound);
-            }
-
-            if (current.Status != DatabaseStatus.Ready)
-            {
-                return new CreateBackupResult(CreateBackupStatus.DatabaseNotReady);
+                return new CreateBackupResult(ineligible);
             }
 
             throw;
         }
 
+        await EnqueueAsync(prepared.Backup!, prepared.Job!);
+
+        return new CreateBackupResult(
+            CreateBackupStatus.Accepted,
+            new CreateBackupResponse(BackupResponse.From(prepared.Backup!), JobResponse.From(prepared.Job!)));
+    }
+
+    /// <summary>
+    /// Why the database cannot be backed up as things stand: it does not exist, is not
+    /// <c>ready</c>, or its instance is not running. Null if it can. Whether it is busy with
+    /// another operation at this moment is not asked here.
+    /// </summary>
+    public async Task<CreateBackupStatus?> EligibilityAsync(Guid databaseId, CancellationToken cancellationToken)
+    {
+        var database = await db.Databases.AsNoTracking().FirstOrDefaultAsync(d => d.Id == databaseId, cancellationToken);
+        if (database is null)
+        {
+            return CreateBackupStatus.DatabaseNotFound;
+        }
+
+        if (database.Status != DatabaseStatus.Ready)
+        {
+            return CreateBackupStatus.DatabaseNotReady;
+        }
+
+        var instance = await db.Instances.AsNoTracking().FirstAsync(i => i.Id == database.InstanceId, cancellationToken);
+        return instance.Status == InstanceStatus.Running ? null : CreateBackupStatus.InstanceNotReady;
+    }
+
+    /// <summary>
+    /// Does everything a backup request does except save and queue: checks that the database can
+    /// be backed up now, and adds a pending backup and its job to the unit of work. The caller
+    /// saves, alone or together with changes of its own, and then calls <see cref="EnqueueAsync"/>.
+    /// This is the one place a backup and its job come from, whoever asks for them.
+    /// </summary>
+    public async Task<PreparedBackup> PrepareAsync(Guid databaseId, CancellationToken cancellationToken)
+    {
+        if (await EligibilityAsync(databaseId, cancellationToken) is { } ineligible)
+        {
+            return new PreparedBackup(ineligible);
+        }
+
+        if (Rejection(await db.UnfinishedJobTypeAsync(databaseId, cancellationToken)) is { } busy)
+        {
+            return new PreparedBackup(busy);
+        }
+
+        var instanceId = await db.Databases.Where(d => d.Id == databaseId).Select(d => d.InstanceId).FirstAsync(cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // For the server's default storage; from here on the backup's own record says where it is.
+        var backup = Backup.Create(databaseId, storage.Type, now);
+        var job = Job.Create(JobType.BackupDatabase, instanceId, jobOptions.Value.MaxAttempts, now, databaseId, backup.Id);
+
+        db.Backups.Add(backup);
+        db.Jobs.Add(job);
+        return new PreparedBackup(CreateBackupStatus.Accepted, backup, job);
+    }
+
+    /// <summary>Queues the job of a backup that has been saved.</summary>
+    public async Task EnqueueAsync(Backup backup, Job job)
+    {
         // Queued only after the commit, so the worker never sees a job that is not in the database.
         // If the process dies between the commit and this line the job stays pending until the
         // next start, when job recovery queues it. Not cancellable: the job is already committed.
         await jobQueue.EnqueueAsync(job.Id, CancellationToken.None);
         logger.LogInformation(
             "Job {JobId} ({JobType}) for backup {BackupId} of database {DatabaseId} of instance {InstanceId} queued",
-            job.Id, job.Type, backup.Id, databaseId, job.InstanceId);
-
-        return new CreateBackupResult(
-            CreateBackupStatus.Accepted,
-            new CreateBackupResponse(BackupResponse.From(backup), JobResponse.From(job)));
+            job.Id, job.Type, backup.Id, backup.DatabaseId, job.InstanceId);
     }
 
     public async Task<BackupResponse?> GetAsync(Guid id, CancellationToken cancellationToken)
@@ -142,6 +170,11 @@ public sealed class BackupService(
         _ => null
     };
 }
+
+/// <param name="Status">Whether the backup can be made, and if not, why.</param>
+/// <param name="Backup">The pending backup, added to the unit of work but not saved; set only when <paramref name="Status"/> is <see cref="CreateBackupStatus.Accepted"/>.</param>
+/// <param name="Job">Its job, likewise.</param>
+public sealed record PreparedBackup(CreateBackupStatus Status, Backup? Backup = null, Job? Job = null);
 
 /// <param name="Status">Whether the backup was accepted, and if not, why.</param>
 /// <param name="Operation">The backup and its job; set only when <paramref name="Status"/> is <see cref="CreateBackupStatus.Accepted"/>.</param>

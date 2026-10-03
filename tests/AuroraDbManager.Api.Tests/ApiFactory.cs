@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
@@ -165,6 +166,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         await scope.ServiceProvider.GetRequiredService<JobProcessor>().ProcessAsync(jobId, cancellationToken);
     }
 
+    /// <summary>One pass of the backup scheduler, the way its worker makes one at every interval.</summary>
+    /// <returns>The ids of the backup jobs the pass created.</returns>
+    public async Task<IReadOnlyList<Guid>> RunSchedulerAsync(CancellationToken cancellationToken = default)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<BackupScheduler>().RunDueAsync(cancellationToken);
+    }
+
     /// <summary>Runs job recovery the way the worker does at startup or at its periodic check.</summary>
     public async Task<IReadOnlyList<Guid>> RecoverJobsAsync(bool includePending)
     {
@@ -308,6 +317,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 options.MaxAttempts = MaxAttempts;
                 options.RetryDelaySeconds = 0;
             });
+
+            // The scheduler never runs by itself in a test: a test lets it pass with
+            // RunSchedulerAsync, at a time of the test's choosing.
+            services.Remove(services.Single(service =>
+                service.ServiceType == typeof(IHostedService) && service.ImplementationType == typeof(ScheduledBackupWorker)));
 
             if (!RunWorker)
             {

@@ -487,5 +487,6 @@ $RECYCLE.BIN/
 # The template rule "Backup*/" above is meant for Visual Studio upgrade folders; it must not
 # swallow the source of the backup feature.
 !src/**/Backups/
+!src/**/BackupSchedules/
 !src/**/BackupDatabase/
 !tests/**/Backups/

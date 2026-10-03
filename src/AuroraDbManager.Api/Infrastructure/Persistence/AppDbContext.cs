@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Domain.Backups;
+using AuroraDbManager.Api.Domain.BackupSchedules;
 using AuroraDbManager.Api.Domain.Databases;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
@@ -14,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<Database> Databases => Set<Database>();
     public DbSet<Backup> Backups => Set<Backup>();
+    public DbSet<BackupSchedule> BackupSchedules => Set<BackupSchedule>();
     public DbSet<InstanceSecret> InstanceSecrets => Set<InstanceSecret>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

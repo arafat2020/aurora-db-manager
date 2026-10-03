@@ -15,6 +15,10 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             table.HasCheckConstraint("ck_jobs_status", $"status IN ({EnumStorage.SqlValues<JobStatus>()})");
             table.HasCheckConstraint("ck_jobs_max_attempts", "max_attempts > 0");
             table.HasCheckConstraint("ck_jobs_attempt", "attempt >= 0 AND attempt <= max_attempts");
+            // Database jobs name their database; every other job has none.
+            table.HasCheckConstraint(
+                "ck_jobs_database_id",
+                $"(type IN ({DatabaseJobTypes}) AND database_id IS NOT NULL) OR (type NOT IN ({DatabaseJobTypes}) AND database_id IS NULL)");
         });
 
         builder.HasKey(j => j.Id).HasName("pk_jobs");
@@ -29,6 +33,8 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasConversion(v => EnumStorage.ToDbValue(v), v => EnumStorage.FromDbValue<JobStatus>(v))
             .IsConcurrencyToken();
         builder.Property(j => j.InstanceId).HasColumnName("instance_id");
+        // Not a foreign key: a delete_database job removes its database and must outlive it.
+        builder.Property(j => j.DatabaseId).HasColumnName("database_id");
         builder.Property(j => j.Attempt).HasColumnName("attempt");
         builder.Property(j => j.MaxAttempts).HasColumnName("max_attempts");
         builder.Property(j => j.ErrorCode).HasColumnName("error_code").HasMaxLength(Job.ErrorCodeMaxLength);
@@ -54,9 +60,23 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.HasIndex(j => j.Status).HasDatabaseName("ix_jobs_status");
 
         // An instance has at most one unfinished job of a type, however many processes try to create one.
+        // Database jobs are left out: an instance may be working on several of its databases at once.
         builder.HasIndex(j => new { j.InstanceId, j.Type })
             .IsUnique()
-            .HasFilter($"status IN ('{EnumStorage.ToDbValue(JobStatus.Pending)}', '{EnumStorage.ToDbValue(JobStatus.Running)}')")
+            .HasFilter($"{Unfinished} AND database_id IS NULL")
             .HasDatabaseName("ux_jobs_instance_id_type_unfinished");
+
+        // A database has at most one unfinished job of any type: a create and a delete, or two of
+        // either, can never be in progress for the same database.
+        builder.HasIndex(j => j.DatabaseId)
+            .IsUnique()
+            .HasFilter($"{Unfinished} AND database_id IS NOT NULL")
+            .HasDatabaseName("ux_jobs_database_id_unfinished");
     }
+
+    private static readonly string Unfinished =
+        $"status IN ('{EnumStorage.ToDbValue(JobStatus.Pending)}', '{EnumStorage.ToDbValue(JobStatus.Running)}')";
+
+    private static readonly string DatabaseJobTypes =
+        $"'{EnumStorage.ToDbValue(JobType.CreateDatabase)}', '{EnumStorage.ToDbValue(JobType.DeleteDatabase)}'";
 }

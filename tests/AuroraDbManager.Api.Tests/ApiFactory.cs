@@ -1,8 +1,11 @@
+using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
+using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
+using AuroraDbManager.Api.Tests.Databases;
 using AuroraDbManager.Api.Tests.Docker;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -16,9 +19,10 @@ using Microsoft.Extensions.Hosting;
 namespace AuroraDbManager.Api.Tests;
 
 /// <summary>
-/// Hosts the API in-process with the system database swapped for a private SQLite file and the
-/// provisioner swapped for a <see cref="FakeInstanceProvisioner"/>, so tests need neither a
-/// PostgreSQL server nor Docker. A file rather than an in-memory database, because the job worker
+/// Hosts the API in-process with the system database swapped for a private SQLite file, the
+/// provisioner swapped for a <see cref="FakeInstanceProvisioner"/> and the database managers
+/// swapped for those of <see cref="FakeDatabaseServers"/>, so tests need neither a PostgreSQL
+/// server nor Docker. A file rather than an in-memory database, because the job worker
 /// and the requests use the database concurrently and each needs its own connection.
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>
@@ -51,7 +55,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     /// </summary>
     public bool UseDockerProvisioner { get; init; }
 
+    /// <summary>
+    /// When set, nothing Docker-related is swapped: instances are real containers on this Docker
+    /// network and databases are managed in them by the real managers. For opt-in integration tests.
+    /// </summary>
+    public string? RealDockerNetwork { get; init; }
+
     public FakeInstanceProvisioner Provisioner { get; } = new();
+
+    public FakeDatabaseServers DatabaseServers { get; } = new();
 
     public FakeDockerEngine Docker { get; } = new();
 
@@ -77,6 +89,30 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         await using var scope = Services.CreateAsyncScope();
         return await action(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
+
+    /// <summary>Creates an instance and runs its provisioning job, leaving it <c>running</c>.</summary>
+    public async Task<Guid> CreateRunningInstanceAsync(HttpClient client, string name = "production-db", string engine = "postgres")
+    {
+        var (instanceId, jobId) = await client.CreateInstanceAsync(name: name, engine: engine);
+        await ProcessJobAsync(jobId);
+        Assert.Equal("running", (await client.GetInstanceAsync(instanceId)).Status());
+        return instanceId;
+    }
+
+    /// <summary>Creates a database and runs its job, leaving it <c>ready</c>.</summary>
+    public async Task<Guid> CreateReadyDatabaseAsync(HttpClient client, Guid instanceId, string name)
+    {
+        var (databaseId, jobId) = await client.CreateDatabaseAsync(instanceId, name);
+        await ProcessJobAsync(jobId);
+        Assert.Equal("ready", (await client.GetDatabaseAsync(databaseId)).Status());
+        return databaseId;
+    }
+
+    // No API moves an instance to "stopped" or back yet, so the status is written directly.
+    public Task SetInstanceStatusAsync(Guid instanceId, InstanceStatus status) =>
+        WithDbAsync(db => db.Instances
+            .Where(i => i.Id == instanceId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(i => i.Status, status)));
 
     public Task<Job> GetJobEntityAsync(Guid jobId) =>
         WithDbAsync(db => db.Jobs.AsNoTracking().SingleAsync(j => j.Id == jobId));
@@ -105,7 +141,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlite($"Data Source={DatabasePath ?? _ownDatabasePath};Pooling=False"));
 
-            if (UseDockerProvisioner)
+            if (RealDockerNetwork is not null)
+            {
+                services.Configure<DockerOptions>(options =>
+                {
+                    options.NetworkName = RealDockerNetwork;
+                    options.ReadinessTimeoutSeconds = 180;
+                    options.ReadinessPollIntervalMilliseconds = 500;
+                });
+            }
+            else if (UseDockerProvisioner)
             {
                 services.RemoveAll<IDockerEngine>();
                 services.AddSingleton<IDockerEngine>(Docker);
@@ -115,6 +160,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             {
                 services.RemoveAll<IInstanceProvisioner>();
                 services.AddSingleton<IInstanceProvisioner>(Provisioner);
+            }
+
+            if (RealDockerNetwork is null)
+            {
+                services.RemoveAll<IDatabaseManager>();
+                services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Postgres));
+                services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Mysql));
             }
 
             if (Clock is not null)

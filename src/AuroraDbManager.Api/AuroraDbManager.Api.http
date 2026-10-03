@@ -34,3 +34,28 @@ DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/jobs/{{jobId}}
 Accept: application/json
+
+###
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/databases
+Content-Type: application/json
+
+{
+  "name": "application"
+}
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/databases?page=1&pageSize=20
+Accept: application/json
+
+###
+
+@databaseId = 00000000-0000-0000-0000-000000000000
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}
+Accept: application/json
+
+###
+
+DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}

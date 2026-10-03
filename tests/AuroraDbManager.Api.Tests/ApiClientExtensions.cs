@@ -8,6 +8,9 @@ internal static class ApiClientExtensions
 {
     public const string InstancesUrl = "/api/v1/instances";
     public const string JobsUrl = "/api/v1/jobs";
+    public const string DatabasesUrl = "/api/v1/databases";
+
+    public static string InstanceDatabasesUrl(Guid instanceId) => $"{InstancesUrl}/{instanceId}/databases";
 
     public static object ValidInstanceRequest(
         string name = "production-db",
@@ -31,6 +34,25 @@ internal static class ApiClientExtensions
 
     public static async Task<JsonElement> GetInstanceAsync(this HttpClient client, Guid id) =>
         await (await client.GetAsync($"{InstancesUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);
+
+    /// <summary>Requests a database and returns the ids of the database and of its creation job.</summary>
+    public static async Task<(Guid DatabaseId, Guid JobId)> CreateDatabaseAsync(this HttpClient client, Guid instanceId, string name)
+    {
+        var response = await client.PostAsJsonAsync(InstanceDatabasesUrl(instanceId), new { name });
+        var body = await response.ReadJsonAsync(HttpStatusCode.Accepted);
+        return (body.GetProperty("database").GetProperty("id").GetGuid(), body.GetProperty("job").GetProperty("id").GetGuid());
+    }
+
+    /// <summary>Requests the deletion of a database and returns the id of its deletion job.</summary>
+    public static async Task<Guid> DeleteDatabaseAsync(this HttpClient client, Guid databaseId)
+    {
+        var response = await client.DeleteAsync($"{DatabasesUrl}/{databaseId}");
+        var body = await response.ReadJsonAsync(HttpStatusCode.Accepted);
+        return body.GetProperty("job").GetProperty("id").GetGuid();
+    }
+
+    public static async Task<JsonElement> GetDatabaseAsync(this HttpClient client, Guid id) =>
+        await (await client.GetAsync($"{DatabasesUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);
 
     public static async Task<JsonElement> GetJobAsync(this HttpClient client, Guid id) =>
         await (await client.GetAsync($"{JobsUrl}/{id}")).ReadJsonAsync(HttpStatusCode.OK);

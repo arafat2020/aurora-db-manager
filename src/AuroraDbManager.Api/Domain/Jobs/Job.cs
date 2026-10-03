@@ -1,7 +1,7 @@
 namespace AuroraDbManager.Api.Domain.Jobs;
 
 /// <summary>
-/// A unit of background work for an instance. A job moves
+/// A unit of background work for an instance, or for one database of an instance. A job moves
 /// <c>pending → running → completed | failed</c> and only through the methods below.
 /// It stays <see cref="JobStatus.Running"/> across retries; <see cref="JobStatus.Failed"/>
 /// is terminal and means every attempt was used up.
@@ -25,6 +25,12 @@ public sealed class Job
     public JobType Type { get; private set; }
     public JobStatus Status { get; private set; }
     public Guid InstanceId { get; private set; }
+
+    /// <summary>
+    /// The database a <c>create_database</c> or <c>delete_database</c> job works on; null for every
+    /// other type. Kept after the database is gone, so a finished job still says what it was for.
+    /// </summary>
+    public Guid? DatabaseId { get; private set; }
 
     /// <summary>
     /// Number of the current attempt; 0 until the job is first picked up. An attempt that was
@@ -52,9 +58,17 @@ public sealed class Job
 
     public bool HasAttemptsRemaining => Attempt < MaxAttempts;
 
-    public static Job Create(JobType type, Guid instanceId, int maxAttempts, DateTime utcNow)
+    public static Job Create(JobType type, Guid instanceId, int maxAttempts, DateTime utcNow, Guid? databaseId = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAttempts);
+
+        var worksOnDatabase = type is JobType.CreateDatabase or JobType.DeleteDatabase;
+        if (worksOnDatabase != databaseId.HasValue)
+        {
+            throw new ArgumentException(
+                worksOnDatabase ? $"A {type} job needs a database." : $"A {type} job does not work on a database.",
+                nameof(databaseId));
+        }
 
         return new Job
         {
@@ -62,6 +76,7 @@ public sealed class Job
             Type = type,
             Status = JobStatus.Pending,
             InstanceId = instanceId,
+            DatabaseId = databaseId,
             Attempt = 0,
             MaxAttempts = maxAttempts,
             CreatedAt = utcNow,

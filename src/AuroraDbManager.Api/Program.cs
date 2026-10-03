@@ -1,9 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
+using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
+using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Errors;
+using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Infrastructure.Secrets;
@@ -41,6 +45,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InstanceService>();
+builder.Services.AddScoped<DatabaseService>();
 
 builder.Services.AddOptions<JobOptions>()
     .Bind(builder.Configuration.GetSection(JobOptions.SectionName))
@@ -55,6 +60,8 @@ builder.Services.AddScoped<JobProcessor>();
 builder.Services.AddScoped<JobRecovery>();
 builder.Services.AddSingleton<InstanceReconciler>();
 builder.Services.AddScoped<IJobHandler, ProvisionInstanceHandler>();
+builder.Services.AddScoped<IJobHandler, CreateDatabaseHandler>();
+builder.Services.AddScoped<IJobHandler, DeleteDatabaseHandler>();
 
 builder.Services.AddOptions<DockerOptions>()
     .Bind(builder.Configuration.GetSection(DockerOptions.SectionName))
@@ -63,6 +70,15 @@ builder.Services.AddOptions<DockerOptions>()
 builder.Services.AddSingleton<IDockerEngine, DockerEngine>();
 builder.Services.AddSingleton<DockerImageResolver>();
 builder.Services.AddScoped<IInstanceProvisioner, DockerInstanceProvisioner>();
+
+// Database managers reach an instance's server on the Docker network; see DockerInstanceEndpointResolver.
+builder.Services.AddOptions<DatabaseManagerOptions>()
+    .Bind(builder.Configuration.GetSection(DatabaseManagerOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<IInstanceEndpointResolver, DockerInstanceEndpointResolver>();
+builder.Services.AddScoped<IDatabaseManager, PostgreSqlDatabaseManager>();
+builder.Services.AddScoped<IDatabaseManager, MySqlDatabaseManager>();
 
 // Encrypts instance passwords at rest; see ProtectedInstanceSecretStore.
 builder.Services.AddDataProtection().SetApplicationName("AuroraDbManager");

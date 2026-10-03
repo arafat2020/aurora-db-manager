@@ -46,12 +46,14 @@ public sealed record DockerVolume(string Name, IReadOnlyDictionary<string, strin
 
 public sealed record DockerLabelledResource(string Name, IReadOnlyDictionary<string, string> Labels);
 
+// NetworkAddresses: the container's IP address on each network it is attached to, by network name.
 public sealed record DockerContainer(
     string Name,
     string Image,
     DockerContainerState State,
     IReadOnlyDictionary<string, string> Labels,
-    IReadOnlyList<DockerMount> Mounts);
+    IReadOnlyList<DockerMount> Mounts,
+    IReadOnlyDictionary<string, string>? NetworkAddresses = null);
 
 /// <param name="VolumeName">Name of the mounted volume.</param>
 /// <param name="Target">Path inside the container.</param>

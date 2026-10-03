@@ -99,7 +99,9 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
                 (container.Mounts ?? [])
                     .Where(mount => mount.Type == "volume")
                     .Select(mount => new DockerMount(mount.Name, mount.Destination))
-                    .ToList());
+                    .ToList(),
+                (container.NetworkSettings?.Networks ?? new Dictionary<string, EndpointSettings>())
+                    .ToDictionary(network => network.Key, network => network.Value.IPAddress ?? string.Empty));
         });
 
     public Task CreateContainerAsync(DockerContainerSpec spec, CancellationToken cancellationToken) =>

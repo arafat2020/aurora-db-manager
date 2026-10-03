@@ -3,6 +3,7 @@ using System;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003052953_AddDatabases")]
+    partial class AddDatabases
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -32,16 +35,6 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<string>("ErrorCode")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("error_code");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)")
-                        .HasColumnName("error_message");
-
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uuid")
                         .HasColumnName("instance_id");
@@ -51,13 +44,6 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                         .HasMaxLength(63)
                         .HasColumnType("character varying(63)")
                         .HasColumnName("name");
-
-                    b.Property<string>("Status")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("status");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -73,10 +59,7 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_databases_instance_id_name");
 
-                    b.ToTable("databases", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_databases_status", "status IN ('creating', 'ready', 'deleting', 'failed')");
-                        });
+                    b.ToTable("databases", (string)null);
                 });
 
             modelBuilder.Entity("AuroraDbManager.Api.Domain.Instances.Instance", b =>
@@ -178,10 +161,6 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<Guid?>("DatabaseId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("database_id");
-
                     b.Property<string>("ErrorCode")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -233,11 +212,6 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_jobs");
 
-                    b.HasIndex("DatabaseId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_jobs_database_id_unfinished")
-                        .HasFilter("status IN ('pending', 'running') AND database_id IS NOT NULL");
-
                     b.HasIndex("InstanceId")
                         .HasDatabaseName("ix_jobs_instance_id");
 
@@ -247,19 +221,17 @@ namespace AuroraDbManager.Api.Infrastructure.Persistence.Migrations
                     b.HasIndex("InstanceId", "Type")
                         .IsUnique()
                         .HasDatabaseName("ux_jobs_instance_id_type_unfinished")
-                        .HasFilter("status IN ('pending', 'running') AND database_id IS NULL");
+                        .HasFilter("status IN ('pending', 'running')");
 
                     b.ToTable("jobs", null, t =>
                         {
                             t.HasCheckConstraint("ck_jobs_attempt", "attempt >= 0 AND attempt <= max_attempts");
 
-                            t.HasCheckConstraint("ck_jobs_database_id", "(type IN ('create_database', 'delete_database') AND database_id IS NOT NULL) OR (type NOT IN ('create_database', 'delete_database') AND database_id IS NULL)");
-
                             t.HasCheckConstraint("ck_jobs_max_attempts", "max_attempts > 0");
 
                             t.HasCheckConstraint("ck_jobs_status", "status IN ('pending', 'running', 'completed', 'failed')");
 
-                            t.HasCheckConstraint("ck_jobs_type", "type IN ('provision_instance', 'create_database', 'delete_database')");
+                            t.HasCheckConstraint("ck_jobs_type", "type IN ('provision_instance')");
                         });
                 });
 

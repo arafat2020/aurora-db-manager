@@ -74,8 +74,13 @@ public sealed class InstanceService(
     /// <summary>
     /// Deletes an instance together with its database server and data. An instance that is still
     /// provisioning is not deleted: its job may be creating resources at this very moment, and
-    /// removing the metadata would leave them behind with nothing pointing to them.
+    /// removing the metadata would leave them behind with nothing pointing to them. Nor is one with
+    /// a database being created or deleted: that job is working inside the server right now.
     /// </summary>
+    /// <remarks>
+    /// The instance's databases are not dropped one by one. They live in the instance's data
+    /// volume and are destroyed with it; their metadata goes with the instance row.
+    /// </remarks>
     /// <exception cref="InstanceProvisioningException">
     /// The instance's resources could not be removed. Its metadata is kept so the delete can be retried.
     /// </exception>
@@ -90,6 +95,16 @@ public sealed class InstanceService(
         if (instance.Status == InstanceStatus.Provisioning)
         {
             return DeleteInstanceResult.Provisioning;
+        }
+
+        var hasUnfinishedDatabaseJob = await db.Jobs.AnyAsync(
+            j => j.InstanceId == id
+                && j.DatabaseId != null
+                && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
+            cancellationToken);
+        if (hasUnfinishedDatabaseJob)
+        {
+            return DeleteInstanceResult.DatabaseOperationInProgress;
         }
 
         // Resources first: if this fails the metadata still exists and still points at them.
@@ -107,5 +122,8 @@ public enum DeleteInstanceResult
     NotFound,
 
     /// <summary>Not deleted because the instance is still being provisioned.</summary>
-    Provisioning
+    Provisioning,
+
+    /// <summary>Not deleted because one of the instance's databases is being created or deleted.</summary>
+    DatabaseOperationInProgress
 }

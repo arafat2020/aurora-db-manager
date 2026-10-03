@@ -19,6 +19,7 @@ public sealed class LocalBackupStorageTests : IDisposable
     public LocalBackupStorageTests()
     {
         _storage = new LocalBackupStorage(
+            new Sha256ArtifactHasher(),
             Options.Create(new BackupOptions { Local = new LocalBackupOptions { RootPath = _root } }),
             NullLogger<LocalBackupStorage>.Instance);
     }
@@ -35,11 +36,16 @@ public sealed class LocalBackupStorageTests : IDisposable
     private string[] AllFiles() =>
         Directory.Exists(_root) ? Directory.GetFiles(_root, "*", SearchOption.AllDirectories) : [];
 
+    private static string Sha256(byte[] content) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+
+    private static string Sha256(string content) => Sha256(System.Text.Encoding.UTF8.GetBytes(content));
+
     private async Task<BackupArtifact> WriteAsync(BackupLocation location, string content)
     {
         await using var staging = await _storage.BeginAsync(location, default);
         await File.WriteAllTextAsync(staging.FilePath, content);
-        return await staging.CommitAsync(default);
+        return await staging.CommitAsync(Sha256(content), default);
     }
 
     [Fact]
@@ -100,6 +106,7 @@ public sealed class LocalBackupStorageTests : IDisposable
     {
         var relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), _root);
         var storage = new LocalBackupStorage(
+            new Sha256ArtifactHasher(),
             Options.Create(new BackupOptions { Local = new LocalBackupOptions { RootPath = relative } }),
             NullLogger<LocalBackupStorage>.Instance);
 
@@ -142,9 +149,9 @@ public sealed class LocalBackupStorageTests : IDisposable
         await using var staging = await _storage.BeginAsync(_location, default);
         await File.WriteAllBytesAsync(staging.FilePath, new byte[12_345]);
 
-        var artifact = await staging.CommitAsync(default);
+        var artifact = await staging.CommitAsync(Sha256(new byte[12_345]), default);
 
-        Assert.Equal(new BackupArtifact(BackupStorageType.Local, _storage.PathFor(_location), 12_345), artifact);
+        Assert.Equal(new BackupArtifact(BackupStorageType.Local, _storage.PathFor(_location), 12_345, Sha256(new byte[12_345])), artifact);
         Assert.Equal([_storage.PathFor(_location)], AllFiles());
         Assert.Equal(12_345, new FileInfo(artifact.Path).Length);
         if (!OperatingSystem.IsWindows())
@@ -180,7 +187,7 @@ public sealed class LocalBackupStorageTests : IDisposable
         BackupOperationException exception;
         await using (var staging = await _storage.BeginAsync(_location, default))
         {
-            exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(default));
+            exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(Sha256(string.Empty), default));
         }
 
         Assert.Equal("BACKUP_ARTIFACT_INVALID", exception.Code);
@@ -193,7 +200,7 @@ public sealed class LocalBackupStorageTests : IDisposable
         await using var staging = await _storage.BeginAsync(_location, default);
         File.Delete(staging.FilePath);
 
-        var exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(default));
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(Sha256("x"), default));
 
         Assert.Equal("BACKUP_STORAGE_FAILED", exception.Code);
         Assert.DoesNotContain(_root, exception.Message);
@@ -207,7 +214,7 @@ public sealed class LocalBackupStorageTests : IDisposable
 
         await using var staging = await _storage.BeginAsync(_location, default);
         await File.WriteAllTextAsync(staging.FilePath, "an impostor");
-        var exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(default));
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(Sha256("an impostor"), default));
 
         Assert.Equal("BACKUP_STORAGE_FAILED", exception.Code);
         Assert.Equal("the first, finished backup", await File.ReadAllTextAsync(_storage.PathFor(_location)));
@@ -333,5 +340,53 @@ public sealed class LocalBackupStorageTests : IDisposable
         Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", partial.Code);
         Assert.Equal("BACKUP_ARTIFACT_NOT_FOUND", foreign.Code);
         Assert.False(File.Exists(destination));
+    }
+
+    // --- Integrity ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Commit_ReturnsTheChecksumOfTheFileAsItIsOnDiskInItsFinalPlace()
+    {
+        var content = new byte[70_000];
+        Random.Shared.NextBytes(content);
+        await using var staging = await _storage.BeginAsync(_location, default);
+        await File.WriteAllBytesAsync(staging.FilePath, content);
+
+        var artifact = await staging.CommitAsync(Sha256(content), default);
+
+        Assert.Equal(Sha256(content), artifact.Checksum);
+        Assert.Equal(Sha256(await File.ReadAllBytesAsync(artifact.Path)), artifact.Checksum);
+    }
+
+    [Fact]
+    public async Task Commit_StoredFileDoesNotHaveTheChecksumOfWhatWasWritten_FailsAsChecksumMismatch_AndLeavesNoArtifact()
+    {
+        await using var staging = await _storage.BeginAsync(_location, default);
+        await File.WriteAllTextAsync(staging.FilePath, "what ended up on disk");
+
+        // The caller hashed something else: the file changed between the checksum and the store.
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(
+            () => staging.CommitAsync(Sha256("what the dump wrote"), default));
+
+        Assert.Equal("BACKUP_CHECKSUM_MISMATCH", exception.Code);
+        Assert.DoesNotContain(Sha256("what the dump wrote"), exception.Message);
+        // A file that is not the backup must not stay at the final path, where it would be found.
+        Assert.False(File.Exists(_storage.PathFor(_location)));
+        Assert.Null(await _storage.FindAsync(_location, default));
+    }
+
+    [Fact]
+    public async Task Find_ReportsTheChecksumOfTheBytesThatAreThereNow()
+    {
+        var artifact = await WriteAsync(_location, "a finished backup");
+        Assert.Equal(Sha256("a finished backup"), (await _storage.FindAsync(_location, default))!.Checksum);
+
+        // Same size, other bytes.
+        await File.WriteAllTextAsync(artifact.Path, "A FINISHED BACKUP");
+
+        var found = await _storage.FindAsync(_location, default);
+        Assert.Equal(17, found!.SizeBytes);
+        Assert.Equal(Sha256("A FINISHED BACKUP"), found.Checksum);
+        Assert.NotEqual(artifact.Checksum, found.Checksum);
     }
 }

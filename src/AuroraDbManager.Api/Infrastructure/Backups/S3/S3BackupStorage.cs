@@ -24,9 +24,16 @@ namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 /// has been verified, or when the attempt has failed and its file is of no further use.
 /// </para>
 /// <para>
+/// <b>Integrity.</b> After the upload the object is read back from the store as a stream and its
+/// SHA-256 compared with that of the file that was uploaded; only an object that matches is
+/// returned as the artifact. The object's ETag is not used for this: it is not a SHA-256, and for
+/// uploads sent in parts it is not a hash of the content at all.
+/// </para>
+/// <para>
 /// <b>Repeating an attempt.</b> An object store shows an object only once its upload has
-/// completed, so an object at the backup's key is a finished upload of this backup. If the local
-/// copy still exists, the two must have the same size or the object is not accepted. An attempt
+/// completed, so an object at the backup's key is a finished upload of this backup. It is still
+/// only accepted if its bytes, read back, have the checksum its uploader stated in the object's
+/// metadata, and, if the local copy still exists, the same size as that copy. An attempt
 /// whose upload failed keeps nothing: the next attempt dumps again and uploads to the same key.
 /// An object that failed verification stays in the bucket, since nothing is deleted there; an
 /// empty <c>.rejected</c> marker in the staging directory keeps later attempts from adopting it,
@@ -39,11 +46,19 @@ namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 /// </remarks>
 public sealed partial class S3BackupStorage(
     IS3ObjectClient s3,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<S3BackupStorage> logger) : IBackupStorage
 {
     private const string StagingSuffix = ".partial";
     private const string RejectedSuffix = ".rejected";
+
+    /// <summary>
+    /// Object metadata in which the uploader states the SHA-256 of what it uploaded. It lets a
+    /// later attempt check an object it finds against what was meant to be stored. The backup's
+    /// own record, once the backup is completed, is what counts; this is only for the time before.
+    /// </summary>
+    public const string ChecksumMetadata = "aurora-checksum-sha256";
     private const UnixFileMode DirectoryMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private const UnixFileMode FileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
@@ -104,9 +119,24 @@ public sealed partial class S3BackupStorage(
             return null;
         }
 
+        // The object must be what its uploader said it uploaded. An object's ETag is not a
+        // SHA-256 and says nothing here; the object's bytes are read and hashed.
+        if (!stored.Metadata.TryGetValue(ChecksumMetadata, out var stated) || !Backup.IsChecksum(stated))
+        {
+            logger.LogWarning("The object of backup {BackupId} states no checksum and is not accepted as its artifact", location.BackupId);
+            return null;
+        }
+
+        var actual = await HashObjectAsync(key, cancellationToken);
+        if (!string.Equals(actual, stated, StringComparison.Ordinal))
+        {
+            logger.LogWarning("The object of backup {BackupId} does not have the checksum it was uploaded with and is not accepted as its artifact", location.BackupId);
+            return null;
+        }
+
         // The object is the backup now; the local copy has done its part.
         RemoveLocalFiles(location);
-        return new BackupArtifact(Type, key, stored.SizeBytes);
+        return new BackupArtifact(Type, key, stored.SizeBytes, actual);
     }
 
     public Task<IBackupStaging> BeginAsync(BackupLocation location, CancellationToken cancellationToken)
@@ -189,6 +219,18 @@ public sealed partial class S3BackupStorage(
     private string VerifiedPathFor(BackupLocation location) =>
         Path.Combine(StagingDirectory, $"{location.BackupId:D}.{location.Extension}");
 
+    /// <summary>The SHA-256 of the object as the store returns it, read as a stream; null if there is no such object.</summary>
+    private async Task<string?> HashObjectAsync(string key, CancellationToken cancellationToken)
+    {
+        string? checksum = null;
+        var found = await s3.ReadObjectAsync(
+            Settings.Bucket,
+            key,
+            async (content, token) => checksum = await hasher.ComputeAsync(content, token),
+            cancellationToken);
+        return found ? checksum : null;
+    }
+
     /// <summary>Empty file that marks the object at the backup's key as one that failed verification.</summary>
     private string RejectedMarkerFor(BackupLocation location) => VerifiedPathFor(location) + RejectedSuffix;
 
@@ -246,7 +288,7 @@ public sealed partial class S3BackupStorage(
     {
         public string FilePath => stagingPath;
 
-        public async Task<BackupArtifact> CommitAsync(CancellationToken cancellationToken)
+        public async Task<BackupArtifact> CommitAsync(string checksum, CancellationToken cancellationToken)
         {
             var settings = storage.Settings;
             var key = storage.KeyFor(location);
@@ -281,6 +323,7 @@ public sealed partial class S3BackupStorage(
             timeout.CancelAfter(TimeSpan.FromSeconds(settings.UploadTimeoutSeconds));
 
             S3ObjectInfo? stored;
+            string? storedChecksum = null;
             try
             {
                 await storage.Client.UploadFileAsync(
@@ -293,11 +336,18 @@ public sealed partial class S3BackupStorage(
                         {
                             ["aurora-backup-id"] = location.BackupId.ToString("D"),
                             ["aurora-database-id"] = location.DatabaseId.ToString("D"),
-                            ["aurora-instance-id"] = location.InstanceId.ToString("D")
+                            ["aurora-instance-id"] = location.InstanceId.ToString("D"),
+                            [ChecksumMetadata] = checksum
                         }),
                     timeout.Token);
 
                 stored = await storage.Client.FindObjectAsync(settings.Bucket, key, timeout.Token);
+
+                // The size is the cheap check and comes first; the object is only read back if it passes.
+                if (stored is not null && stored.SizeBytes == sizeBytes)
+                {
+                    storedChecksum = await storage.HashObjectAsync(key, timeout.Token);
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -317,8 +367,18 @@ public sealed partial class S3BackupStorage(
                     "The uploaded backup could not be verified in the backup storage.");
             }
 
+            // The object has the right size; its bytes, read back from the store, must also be
+            // the bytes that were uploaded.
+            if (!string.Equals(storedChecksum, checksum, StringComparison.Ordinal))
+            {
+                storage.Log.LogWarning("After its upload the object of backup {BackupId} does not have the checksum of the file that was uploaded", location.BackupId);
+                storage.SetRejected(location, rejected: true);
+                throw new BackupOperationException(
+                    BackupErrorCodes.BackupChecksumMismatch, "The stored backup does not match the backup that was written.");
+            }
+
             storage.SetRejected(location, rejected: false);
-            return new BackupArtifact(storage.Type, key, stored.SizeBytes);
+            return new BackupArtifact(storage.Type, key, stored.SizeBytes, storedChecksum);
         }
 
         // After a verified upload the local copy is no longer the backup; after a failed attempt

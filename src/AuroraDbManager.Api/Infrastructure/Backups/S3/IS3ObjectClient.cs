@@ -1,8 +1,8 @@
 namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 
 /// <summary>
-/// The three S3 operations backup storage needs, and nothing else: put a file as an object, ask
-/// whether an object is there, and get an object into a file. All AWS SDK calls live behind this interface, so
+/// The S3 operations backup storage needs, and nothing else: put a file as an object, ask
+/// whether an object is there, and get an object, into a file or as a stream. All AWS SDK calls live behind this interface, so
 /// <see cref="S3BackupStorage"/> can be tested without an object store. Failures are reported as
 /// <see cref="Application.Backups.BackupOperationException"/> with a client-safe code and message.
 /// </summary>
@@ -22,11 +22,18 @@ public interface IS3ObjectClient
     /// object. The object is written to disk as it arrives; it is never held in memory as a whole.
     /// </summary>
     Task<bool> DownloadFileAsync(string bucket, string key, string filePath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Hands the object's content to <paramref name="read"/> as a stream, as it arrives, and
+    /// returns false if there is no such object. Nothing is kept: neither in memory nor on disk.
+    /// </summary>
+    Task<bool> ReadObjectAsync(string bucket, string key, Func<Stream, CancellationToken, Task> read, CancellationToken cancellationToken);
 }
 
 /// <param name="SizeBytes">The object's size as the store reports it.</param>
 /// <param name="ContentType">The object's content type.</param>
-public sealed record S3ObjectInfo(long SizeBytes, string? ContentType);
+/// <param name="Metadata">The metadata stored with the object, by name without the <c>x-amz-meta-</c> prefix.</param>
+public sealed record S3ObjectInfo(long SizeBytes, string? ContentType, IReadOnlyDictionary<string, string> Metadata);
 
 /// <param name="Bucket">The bucket to store into.</param>
 /// <param name="Key">The object's key.</param>

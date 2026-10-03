@@ -14,6 +14,14 @@ public sealed class BackupConfiguration : IEntityTypeConfiguration<Backup>
             table.HasCheckConstraint("ck_backups_status", $"status IN ({EnumStorage.SqlValues<BackupStatus>()})");
             table.HasCheckConstraint("ck_backups_storage_type", $"storage_type IN ({EnumStorage.SqlValues<BackupStorageType>()})");
             table.HasCheckConstraint("ck_backups_size_bytes", "size_bytes IS NULL OR size_bytes > 0");
+            // A checksum and its algorithm come together, only on a completed backup. A completed
+            // backup may lack both: those completed before checksums existed.
+            table.HasCheckConstraint(
+                "ck_backups_checksum",
+                $"(checksum IS NULL) = (checksum_algorithm IS NULL) AND (checksum IS NULL OR (status = '{EnumStorage.ToDbValue(BackupStatus.Completed)}' AND length(checksum) = {Backup.ChecksumLength}))");
+            table.HasCheckConstraint(
+                "ck_backups_checksum_algorithm",
+                $"checksum_algorithm IS NULL OR checksum_algorithm IN ({EnumStorage.SqlValues<BackupChecksumAlgorithm>()})");
             // Only a completed backup has an artifact, and a completed backup always has one.
             table.HasCheckConstraint(
                 "ck_backups_artifact",
@@ -32,6 +40,11 @@ public sealed class BackupConfiguration : IEntityTypeConfiguration<Backup>
             .HasConversion(v => EnumStorage.ToDbValue(v), v => EnumStorage.FromDbValue<BackupStorageType>(v));
         builder.Property(b => b.Path).HasColumnName("path").HasMaxLength(Backup.PathMaxLength);
         builder.Property(b => b.SizeBytes).HasColumnName("size_bytes");
+        builder.Property(b => b.ChecksumAlgorithm).HasColumnName("checksum_algorithm").HasMaxLength(16)
+            .HasConversion(
+                v => EnumStorage.ToDbValue(v!.Value),
+                v => EnumStorage.FromDbValue<BackupChecksumAlgorithm>(v));
+        builder.Property(b => b.Checksum).HasColumnName("checksum").HasMaxLength(Backup.ChecksumLength);
         builder.Property(b => b.CreatedAt).HasColumnName("created_at");
         builder.Property(b => b.CompletedAt).HasColumnName("completed_at");
         builder.Property(b => b.ErrorCode).HasColumnName("error_code").HasMaxLength(Backup.ErrorCodeMaxLength);

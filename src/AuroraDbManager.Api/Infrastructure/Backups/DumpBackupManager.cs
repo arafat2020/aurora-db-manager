@@ -28,6 +28,12 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// program's diagnostics before they are logged.
 /// </para>
 /// <para>
+/// <b>Integrity.</b> Once the dump has been validated, its SHA-256 is calculated from the file's
+/// bytes. The storage stores the file, reads the stored artifact back and compares checksums; a
+/// mismatch fails the attempt. The verified checksum is recorded with the backup, and a restore
+/// checks it again before it touches a database.
+/// </para>
+/// <para>
 /// <b>Repeating an attempt.</b> The artifact's place, a path or an object key, is determined by
 /// the backup's id. If a finished artifact is already there, an earlier attempt completed it and
 /// was interrupted before that could be recorded; it is adopted as it is, since an artifact only
@@ -40,6 +46,7 @@ public abstract class DumpBackupManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger logger) : IBackupManager
 {
@@ -150,7 +157,20 @@ public abstract class DumpBackupManager(
                 BackupErrorCodes.BackupArtifactInvalid, "The backup program did not produce a complete backup.");
         }
 
-        var artifact = await staging.CommitAsync(cancellationToken);
+        // The checksum of exactly the file that is about to be stored. The storage reads the
+        // artifact back and compares, so what is recorded is the checksum of what is stored.
+        string checksum;
+        try
+        {
+            checksum = await hasher.ComputeAsync(staging.FilePath, cancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageFailed, "The backup's checksum could not be calculated.", exception);
+        }
+
+        var artifact = await staging.CommitAsync(checksum, cancellationToken);
         logger.LogInformation(
             "Backup {BackupId} finished: {SizeBytes} bytes in {StorageType} storage",
             backup.Id, artifact.SizeBytes, artifact.StorageType);

@@ -7,6 +7,8 @@ public sealed class BackupTransitionTests
 {
     private static readonly DateTime Now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    private const string Checksum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
     private static Backup NewBackup() => Backup.Create(Guid.NewGuid(), BackupStorageType.Local, Now);
 
     private static Backup In(BackupStatus status)
@@ -19,7 +21,7 @@ public sealed class BackupTransitionTests
 
         if (status == BackupStatus.Completed)
         {
-            backup.MarkCompleted("/backups/a.dump", 10, Now);
+            backup.MarkCompleted("/backups/a.dump", 10, BackupChecksumAlgorithm.Sha256, Checksum, Now);
         }
 
         if (status == BackupStatus.Failed)
@@ -45,8 +47,37 @@ public sealed class BackupTransitionTests
         Assert.Equal(Now, backup.CreatedAt);
         Assert.Null(backup.Path);
         Assert.Null(backup.SizeBytes);
+        Assert.Null(backup.ChecksumAlgorithm);
+        Assert.Null(backup.Checksum);
         Assert.Null(backup.CompletedAt);
         Assert.Null(backup.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("ba7816bf")]
+    [InlineData("BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")]
+    [InlineData("ga7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")]
+    [InlineData("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad0")]
+    [InlineData("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2")]
+    public void MarkCompleted_WithoutAWellFormedChecksum_IsRejected_AndTheBackupStaysRunning(string checksum)
+    {
+        var backup = In(BackupStatus.Running);
+
+        Assert.Throws<ArgumentException>(() => backup.MarkCompleted("/backups/a.dump", 10, BackupChecksumAlgorithm.Sha256, checksum, Now));
+
+        Assert.Equal(BackupStatus.Running, backup.Status);
+        Assert.Null(backup.Checksum);
+        Assert.Null(backup.ChecksumAlgorithm);
+    }
+
+    [Fact]
+    public void FailedBackup_HasNoChecksum()
+    {
+        var backup = In(BackupStatus.Failed);
+
+        Assert.Null(backup.Checksum);
+        Assert.Null(backup.ChecksumAlgorithm);
     }
 
     [Fact]
@@ -71,11 +102,13 @@ public sealed class BackupTransitionTests
     {
         var backup = In(BackupStatus.Running);
 
-        backup.MarkCompleted("/backups/a.dump", 1234, Now.AddMinutes(1));
+        backup.MarkCompleted("/backups/a.dump", 1234, BackupChecksumAlgorithm.Sha256, Checksum, Now.AddMinutes(1));
 
         Assert.Equal(BackupStatus.Completed, backup.Status);
         Assert.Equal("/backups/a.dump", backup.Path);
         Assert.Equal(1234, backup.SizeBytes);
+        Assert.Equal(BackupChecksumAlgorithm.Sha256, backup.ChecksumAlgorithm);
+        Assert.Equal(Checksum, backup.Checksum);
         Assert.Equal(Now.AddMinutes(1), backup.CompletedAt);
         Assert.Null(backup.ErrorCode);
     }
@@ -126,7 +159,7 @@ public sealed class BackupTransitionTests
     {
         var backup = In(from);
 
-        Assert.Throws<InvalidOperationException>(() => backup.MarkCompleted("/backups/b.dump", 99, Now));
+        Assert.Throws<InvalidOperationException>(() => backup.MarkCompleted("/backups/b.dump", 99, BackupChecksumAlgorithm.Sha256, Checksum, Now));
         Assert.Equal(from, backup.Status);
     }
 
@@ -150,7 +183,7 @@ public sealed class BackupTransitionTests
     {
         var backup = In(BackupStatus.Running);
 
-        Assert.ThrowsAny<ArgumentException>(() => backup.MarkCompleted(path, sizeBytes, Now));
+        Assert.ThrowsAny<ArgumentException>(() => backup.MarkCompleted(path, sizeBytes, BackupChecksumAlgorithm.Sha256, Checksum, Now));
         Assert.Equal(BackupStatus.Running, backup.Status);
     }
 

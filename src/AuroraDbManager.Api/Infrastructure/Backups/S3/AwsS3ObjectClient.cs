@@ -32,6 +32,8 @@ namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 /// </remarks>
 public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3ObjectClient, IDisposable
 {
+    private const string MetadataPrefix = "x-amz-meta-";
+
     private readonly Lazy<AmazonS3Client> _client = new(() => CreateClient(options.Value.S3));
 
     public async Task<S3ObjectInfo?> FindObjectAsync(string bucket, string key, CancellationToken cancellationToken)
@@ -40,7 +42,13 @@ public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3Obje
         {
             var metadata = await _client.Value.GetObjectMetadataAsync(
                 new GetObjectMetadataRequest { BucketName = bucket, Key = key }, cancellationToken);
-            return new S3ObjectInfo(metadata.ContentLength, metadata.Headers.ContentType);
+            return new S3ObjectInfo(
+                metadata.ContentLength,
+                metadata.Headers.ContentType,
+                metadata.Metadata.Keys.ToDictionary(
+                    name => name.StartsWith(MetadataPrefix, StringComparison.OrdinalIgnoreCase) ? name[MetadataPrefix.Length..] : name,
+                    name => metadata.Metadata[name],
+                    StringComparer.OrdinalIgnoreCase));
         }
         catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.NotFound)
         {
@@ -89,6 +97,26 @@ public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3Obje
             using var response = await _client.Value.GetObjectAsync(
                 new GetObjectRequest { BucketName = bucket, Key = key }, cancellationToken);
             await response.WriteResponseStreamToFileAsync(filePath, append: false, cancellationToken);
+            return true;
+        }
+        catch (AmazonS3Exception exception) when (exception.ErrorCode == "NoSuchKey")
+        {
+            return false;
+        }
+        catch (Exception exception) when (!IsCancellation(exception, cancellationToken))
+        {
+            throw S3Errors.Translate(exception);
+        }
+    }
+
+    public async Task<bool> ReadObjectAsync(
+        string bucket, string key, Func<Stream, CancellationToken, Task> read, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _client.Value.GetObjectAsync(
+                new GetObjectRequest { BucketName = bucket, Key = key }, cancellationToken);
+            await read(response.ResponseStream, cancellationToken);
             return true;
         }
         catch (AmazonS3Exception exception) when (exception.ErrorCode == "NoSuchKey")

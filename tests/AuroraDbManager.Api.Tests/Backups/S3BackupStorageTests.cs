@@ -26,6 +26,7 @@ public sealed class S3BackupStorageTests : IDisposable
 
     private S3BackupStorage Storage(string? prefix = null, int uploadTimeoutSeconds = 60) => new(
         _store,
+        new Sha256ArtifactHasher(),
         Options.Create(new BackupOptions
         {
             StorageType = BackupStorageType.S3,
@@ -45,11 +46,14 @@ public sealed class S3BackupStorageTests : IDisposable
 
     private string[] LocalFiles() => Directory.Exists(_staging) ? Directory.GetFiles(_staging, "*", SearchOption.AllDirectories) : [];
 
+    private static string Sha256(byte[] content) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+
     private static async Task<BackupArtifact> WriteAsync(S3BackupStorage storage, BackupLocation location, byte[] content)
     {
         await using var staging = await storage.BeginAsync(location, default);
         await File.WriteAllBytesAsync(staging.FilePath, content);
-        return await staging.CommitAsync(default);
+        return await staging.CommitAsync(Sha256(content), default);
     }
 
     [Fact]
@@ -131,7 +135,7 @@ public sealed class S3BackupStorageTests : IDisposable
 
         var artifact = await WriteAsync(Storage(), _location, content);
 
-        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 12_345), artifact);
+        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 12_345, Sha256(content)), artifact);
         var stored = Assert.Single(_store.ObjectsIn());
         Assert.Equal(KeyOf(_location), stored.Key);
         Assert.Equal(content, stored.Value.Content);
@@ -159,7 +163,8 @@ public sealed class S3BackupStorageTests : IDisposable
             {
                 ["aurora-backup-id"] = location.BackupId.ToString("D"),
                 ["aurora-database-id"] = location.DatabaseId.ToString("D"),
-                ["aurora-instance-id"] = location.InstanceId.ToString("D")
+                ["aurora-instance-id"] = location.InstanceId.ToString("D"),
+                ["aurora-checksum-sha256"] = Sha256("a backup"u8.ToArray())
             },
             stored.Metadata);
     }
@@ -180,7 +185,7 @@ public sealed class S3BackupStorageTests : IDisposable
 
         await using var staging = await storage.BeginAsync(_location, default);
         await File.WriteAllTextAsync(staging.FilePath, "a backup");
-        var committing = staging.CommitAsync(default);
+        var committing = staging.CommitAsync(Sha256("a backup"u8.ToArray()), default);
         await _store.WaitForUploadAsync();
 
         // The upload is under way: the only copy so far is the local one, and it is intact.
@@ -198,7 +203,7 @@ public sealed class S3BackupStorageTests : IDisposable
         BackupOperationException exception;
         await using (var staging = await Storage().BeginAsync(_location, default))
         {
-            exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(default));
+            exception = await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(Sha256([]), default));
         }
 
         Assert.Equal("BACKUP_ARTIFACT_INVALID", exception.Code);
@@ -255,7 +260,7 @@ public sealed class S3BackupStorageTests : IDisposable
         _store.Unavailable = true;
 
         Assert.Equal("BACKUP_STORAGE_UNAVAILABLE", (await Assert.ThrowsAsync<BackupOperationException>(() => storage.FindAsync(_location, default))).Code);
-        Assert.Equal("BACKUP_STORAGE_UNAVAILABLE", (await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(default))).Code);
+        Assert.Equal("BACKUP_STORAGE_UNAVAILABLE", (await Assert.ThrowsAsync<BackupOperationException>(() => staging.CommitAsync(Sha256("a backup"u8.ToArray()), default))).Code);
     }
 
     [Fact]
@@ -330,7 +335,7 @@ public sealed class S3BackupStorageTests : IDisposable
         await using (var staging = await Storage().BeginAsync(_location, default))
         {
             await File.WriteAllTextAsync(staging.FilePath, "a backup");
-            var committing = staging.CommitAsync(cancellation.Token);
+            var committing = staging.CommitAsync(Sha256("a backup"u8.ToArray()), cancellation.Token);
             await _store.WaitForUploadAsync();
             await cancellation.CancelAsync();
 
@@ -355,7 +360,7 @@ public sealed class S3BackupStorageTests : IDisposable
         var storage = Storage();
         await WriteAsync(storage, _location, new byte[777]);
 
-        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 777), await storage.FindAsync(_location, default));
+        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 777, Sha256(new byte[777])), await storage.FindAsync(_location, default));
         Assert.Null(await storage.FindAsync(_location with { BackupId = Guid.NewGuid() }, default));
         // Finding uploads nothing and replaces nothing.
         Assert.Equal(1, _store.UploadCount);
@@ -372,7 +377,7 @@ public sealed class S3BackupStorageTests : IDisposable
 
         var artifact = await Storage().FindAsync(_location, default);
 
-        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 500), artifact);
+        Assert.Equal(new BackupArtifact(BackupStorageType.S3, KeyOf(_location), 500, Sha256(new byte[500])), artifact);
         Assert.Empty(LocalFiles());
     }
 
@@ -467,5 +472,95 @@ public sealed class S3BackupStorageTests : IDisposable
             () => storage.DownloadAsync(artifact, Path.Combine(_staging, "restore-copy"), default));
 
         Assert.Equal("BACKUP_STORAGE_UNAVAILABLE", exception.Code);
+    }
+
+    // --- Integrity ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Commit_ReadsTheObjectBackFromTheStore_AndReturnsItsChecksum()
+    {
+        var content = new byte[70_000];
+        Random.Shared.NextBytes(content);
+
+        var artifact = await WriteAsync(Storage(), _location, content);
+
+        Assert.Equal(Sha256(content), artifact.Checksum);
+        // Verified against the bytes the store returns, not assumed from the upload.
+        Assert.Equal(1, _store.Reads);
+        Assert.Equal(Sha256(_store.ObjectsIn()[KeyOf(_location)].Content), artifact.Checksum);
+    }
+
+    [Fact]
+    public async Task Commit_StoreHoldsOtherBytesOfTheSameSize_FailsAsChecksumMismatch_AndTheObjectIsNeverAdopted()
+    {
+        var storage = Storage();
+        _store.CorruptUploads = true;
+
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(
+            () => WriteAsync(storage, _location, "a complete backup"u8.ToArray()));
+
+        // The size check alone would have passed.
+        Assert.Equal(17, _store.ObjectsIn()[KeyOf(_location)].Content.Length);
+        Assert.Equal("BACKUP_CHECKSUM_MISMATCH", exception.Code);
+        Assert.DoesNotContain(Sha256("a complete backup"u8.ToArray()), exception.Message);
+        // The object is still there, since nothing deletes objects, and is known not to be a backup.
+        Assert.Null(await storage.FindAsync(_location, default));
+        Assert.EndsWith(".rejected", Assert.Single(LocalFiles()));
+
+        _store.CorruptUploads = false;
+        var artifact = await WriteAsync(storage, _location, "a complete backup"u8.ToArray());
+        Assert.Equal(artifact, await storage.FindAsync(_location, default));
+    }
+
+    [Fact]
+    public async Task Commit_CallerChecksumIsNotThatOfTheUploadedFile_FailsAsChecksumMismatch()
+    {
+        await using var staging = await Storage().BeginAsync(_location, default);
+        await File.WriteAllTextAsync(staging.FilePath, "what was uploaded");
+
+        var exception = await Assert.ThrowsAsync<BackupOperationException>(
+            () => staging.CommitAsync(Sha256("what the dump wrote"u8.ToArray()), default));
+
+        Assert.Equal("BACKUP_CHECKSUM_MISMATCH", exception.Code);
+    }
+
+    [Fact]
+    public async Task Find_ObjectWhoseBytesWereChangedButNotItsSize_IsNotAdopted()
+    {
+        var storage = Storage();
+        await WriteAsync(storage, _location, new byte[900]);
+        Assert.NotNull(await storage.FindAsync(_location, default));
+
+        // Same key, same size, same metadata; other content.
+        _store.Corrupt(KeyOf(_location));
+
+        Assert.Equal(900, _store.ObjectsIn()[KeyOf(_location)].Content.Length);
+        Assert.Null(await storage.FindAsync(_location, default));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-checksum")]
+    [InlineData("0000000000000000000000000000000000000000000000000000000000000000")]
+    public async Task Find_ObjectThatStatesNoChecksum_OrAnotherOne_IsNotAdopted(string? statedChecksum)
+    {
+        _store.PutStating(KeyOf(_location), new byte[300], statedChecksum);
+
+        Assert.Null(await Storage().FindAsync(_location, default));
+    }
+
+    [Fact]
+    public async Task Find_NeverUsesTheStoresOwnIdeaOfAHash()
+    {
+        // Nothing but the object's bytes and its stated checksum decides; a store's ETag is not
+        // part of what the storage is even given.
+        Assert.DoesNotContain(
+            typeof(S3ObjectInfo).GetProperties(), property => property.Name.Contains("ETag", StringComparison.OrdinalIgnoreCase));
+        _store.Put(KeyOf(_location), new byte[300]);
+
+        var artifact = await Storage().FindAsync(_location, default);
+
+        Assert.Equal(Sha256(new byte[300]), artifact!.Checksum);
+        Assert.Equal(1, _store.Reads);
     }
 }

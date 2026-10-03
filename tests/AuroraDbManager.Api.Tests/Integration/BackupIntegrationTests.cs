@@ -116,6 +116,10 @@ public sealed class BackupIntegrationTests : IAsyncLifetime
         var path = _factory.BackupFilePath(instanceId, databaseId, backupId, "dump");
         Assert.Equal([path], _factory.BackupFiles());
         Assert.Equal(new FileInfo(path).Length, backup.GetProperty("sizeBytes").GetInt64());
+        Assert.Equal("sha256", backup.GetProperty("checksumAlgorithm").GetString());
+        Assert.Equal(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(path))),
+            backup.GetProperty("checksum").GetString());
         AssertPrivate(path);
 
         // The archive is one pg_restore can read, and holds the table and its rows.

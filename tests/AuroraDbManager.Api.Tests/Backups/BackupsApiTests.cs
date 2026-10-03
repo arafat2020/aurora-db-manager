@@ -23,7 +23,7 @@ namespace AuroraDbManager.Api.Tests.Backups;
 public sealed class BackupsApiTests : IDisposable
 {
     private static readonly string[] BackupFields =
-        ["completedAt", "createdAt", "databaseId", "error", "id", "sizeBytes", "status", "storageType"];
+        ["checksum", "checksumAlgorithm", "completedAt", "createdAt", "databaseId", "error", "id", "sizeBytes", "status", "storageType"];
 
     private readonly ApiFactory _factory = new();
     private readonly HttpClient _client;
@@ -61,6 +61,9 @@ public sealed class BackupsApiTests : IDisposable
         Assert.InRange(backup.GetProperty("createdAt").GetDateTimeOffset(), before, DateTimeOffset.UtcNow);
         Assert.Equal(JsonValueKind.Null, backup.GetProperty("completedAt").ValueKind);
         Assert.Equal(JsonValueKind.Null, backup.GetProperty("sizeBytes").ValueKind);
+        // No checksum is claimed for a backup that does not exist yet.
+        Assert.Equal(JsonValueKind.Null, backup.GetProperty("checksum").ValueKind);
+        Assert.Equal(JsonValueKind.Null, backup.GetProperty("checksumAlgorithm").ValueKind);
         Assert.Equal(JsonValueKind.Null, backup.GetProperty("error").ValueKind);
         Assert.Equal(BackupFields, backup.EnumerateObject().Select(property => property.Name).Order());
 
@@ -347,6 +350,10 @@ public sealed class BackupsApiTests : IDisposable
         Assert.Equal(databaseId, backup.GetProperty("databaseId").GetGuid());
         Assert.Equal("local", backup.GetProperty("storageType").GetString());
         Assert.Equal(FakeDumpTools.PostgresDump.Length, backup.GetProperty("sizeBytes").GetInt64());
+        Assert.Equal("sha256", backup.GetProperty("checksumAlgorithm").GetString());
+        Assert.Equal(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(FakeDumpTools.PostgresDump)),
+            backup.GetProperty("checksum").GetString());
         Assert.True(backup.GetProperty("completedAt").GetDateTimeOffset() >= backup.GetProperty("createdAt").GetDateTimeOffset());
         Assert.Equal(JsonValueKind.Null, backup.GetProperty("error").ValueKind);
         Assert.Equal(BackupFields, backup.EnumerateObject().Select(property => property.Name).Order());
@@ -374,6 +381,7 @@ public sealed class BackupsApiTests : IDisposable
         Assert.Equal("failed", backup.Status());
         Assert.Equal("BACKUP_PROCESS_FAILED", backup.GetProperty("error").GetProperty("code").GetString());
         Assert.Equal(JsonValueKind.Null, backup.GetProperty("sizeBytes").ValueKind);
+        Assert.Equal(JsonValueKind.Null, backup.GetProperty("checksum").ValueKind);
         Assert.Equal(JsonValueKind.String, backup.GetProperty("completedAt").ValueKind);
         Assert.DoesNotContain("raw-tool-detail", backup.GetRawText());
     }

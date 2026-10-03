@@ -38,6 +38,9 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
     /// <summary>When set, an upload stores only this many bytes of the file, as a store that lost data would.</summary>
     public int? TruncateUploadsTo { get; set; }
 
+    /// <summary>When true an upload stores the file with one byte changed: the same size, other content.</summary>
+    public bool CorruptUploads { get; set; }
+
     /// <summary>When true an upload reports success but stores nothing.</summary>
     public bool DropUploads { get; set; }
 
@@ -60,13 +63,38 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
         }
     }
 
-    /// <summary>Puts an object into the store, as an upload that completed earlier would have.</summary>
-    public void Put(string key, byte[] content, string contentType = "application/octet-stream", string bucket = Bucket)
+    /// <summary>
+    /// Puts an object into the store, as an upload that completed earlier would have, stating the
+    /// SHA-256 of <paramref name="content"/> in its metadata the way the application's uploads do.
+    /// </summary>
+    public void Put(string key, byte[] content, string contentType = "application/octet-stream", string bucket = Bucket) =>
+        PutStating(key, content, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content)), contentType, bucket);
+
+    /// <summary>Puts an object into the store that states the given checksum, or none if it is null.</summary>
+    public void PutStating(string key, byte[] content, string? statedChecksum, string contentType = "application/octet-stream", string bucket = Bucket)
     {
         lock (_lock)
         {
             var version = _objects.TryGetValue((bucket, key), out var existing) ? existing.Version + 1 : 1;
-            _objects[(bucket, key)] = new StoredObject(content, contentType, new Dictionary<string, string>(), version);
+            var metadata = new Dictionary<string, string>();
+            if (statedChecksum is not null)
+            {
+                metadata[Infrastructure.Backups.S3.S3BackupStorage.ChecksumMetadata] = statedChecksum;
+            }
+
+            _objects[(bucket, key)] = new StoredObject(content, contentType, metadata, version);
+        }
+    }
+
+    /// <summary>Changes one byte of a stored object in place: the same size, the same metadata, other content.</summary>
+    public void Corrupt(string key, string bucket = Bucket)
+    {
+        lock (_lock)
+        {
+            var stored = _objects[(bucket, key)];
+            var content = (byte[])stored.Content.Clone();
+            content[^1] ^= 0xFF;
+            _objects[(bucket, key)] = stored with { Content = content };
         }
     }
 
@@ -107,7 +135,7 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
         lock (_lock)
         {
             return Task.FromResult(_objects.TryGetValue((bucket, key), out var stored)
-                ? new S3ObjectInfo(stored.Content.Length, stored.ContentType)
+                ? new S3ObjectInfo(stored.Content.Length, stored.ContentType, stored.Metadata)
                 : null);
         }
     }
@@ -153,6 +181,11 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
             content = content[..Math.Min(length, content.Length)];
         }
 
+        if (CorruptUploads)
+        {
+            content[^1] ^= 0xFF;
+        }
+
         lock (_lock)
         {
             var version = _objects.TryGetValue((upload.Bucket, upload.Key), out var existing) ? existing.Version + 1 : 1;
@@ -182,6 +215,32 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
         }
 
         await File.WriteAllBytesAsync(filePath, stored.Content, cancellationToken);
+        return true;
+    }
+
+    /// <summary>How many times an object's content was read back as a stream.</summary>
+    public int Reads { get; private set; }
+
+    public async Task<bool> ReadObjectAsync(
+        string bucket, string key, Func<Stream, CancellationToken, Task> read, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfUnavailable();
+
+        StoredObject? stored;
+        lock (_lock)
+        {
+            Reads++;
+            _objects.TryGetValue((bucket, key), out stored);
+        }
+
+        if (stored is null)
+        {
+            return false;
+        }
+
+        using var content = new MemoryStream(stored.Content, writable: false);
+        await read(content, cancellationToken);
         return true;
     }
 

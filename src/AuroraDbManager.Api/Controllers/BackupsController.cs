@@ -17,7 +17,8 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
     /// <remarks>
     /// The backup is stored with status <c>pending</c> together with a <c>backup_database</c> job,
     /// which dumps the database to the server's local backup storage. The backup becomes
-    /// <c>running</c> when the job picks it up, then <c>completed</c>, with its size, or
+    /// <c>running</c> when the job picks it up, then <c>completed</c>, with its size and the
+    /// SHA-256 of the stored backup, which was read back from the storage and verified, or
     /// <c>failed</c> when the job has used all its attempts. Follow the job with
     /// <c>GET /api/v1/jobs/{id}</c>; the <c>Location</c> header points to the backup. The request
     /// takes no body: where and how a backup is stored is not for the client to choose. The
@@ -87,6 +88,9 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
     /// named. A <c>restore_database</c> job is created; its status is the restore's status. Follow
     /// it with <c>GET /api/v1/jobs/{id}</c>, which the <c>Location</c> header points to. If the job
     /// fails, the database may be left empty or partly restored; restoring again repairs that.
+    /// Before anything in the database is changed, the backup is fetched and checked against its
+    /// recorded size and SHA-256; a backup that does not match is not restored. Backups completed
+    /// before checksums were recorded are checked by size and format only.
     /// The backup must be <c>completed</c> (<c>409 BACKUP_NOT_COMPLETED</c>) and in the storage
     /// the server is configured with (<c>409 BACKUP_STORAGE_NOT_CONFIGURED</c>), its database
     /// <c>ready</c> (<c>409 DATABASE_NOT_READY</c>) and the instance <c>running</c>

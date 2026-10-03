@@ -27,4 +27,8 @@ public interface IBackupManager
 /// <param name="StorageType">The storage the artifact is in.</param>
 /// <param name="Path">Where it is, in terms of that storage.</param>
 /// <param name="SizeBytes">Its actual size there.</param>
-public sealed record BackupArtifact(BackupStorageType StorageType, string Path, long SizeBytes);
+/// <param name="Checksum">
+/// The SHA-256 of its bytes there, as 64 lowercase hexadecimal characters; null when none is
+/// known, which is the case for backups completed before checksums existed.
+/// </param>
+public sealed record BackupArtifact(BackupStorageType StorageType, string Path, long SizeBytes, string? Checksum = null);

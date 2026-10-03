@@ -21,11 +21,19 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// and a <c>.partial</c> file never is one.
 /// </para>
 /// <para>
+/// <b>Integrity.</b> After the rename the artifact is read back from disk and its SHA-256 compared
+/// with that of the file that was written. A file that does not match is removed again, so a file
+/// at the final path is not only finished but verified.
+/// </para>
+/// <para>
 /// <b>Permissions.</b> On Unix, directories are created accessible to the API's user only (0700)
 /// and files readable and writable by that user only (0600). Nothing is enforced on Windows.
 /// </para>
 /// </remarks>
-public sealed partial class LocalBackupStorage(IOptions<BackupOptions> options, ILogger<LocalBackupStorage> logger) : IBackupStorage
+public sealed partial class LocalBackupStorage(
+    IArtifactHasher hasher,
+    IOptions<BackupOptions> options,
+    ILogger<LocalBackupStorage> logger) : IBackupStorage
 {
     private const string StagingSuffix = ".partial";
     private const UnixFileMode DirectoryMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
@@ -61,12 +69,31 @@ public sealed partial class LocalBackupStorage(IOptions<BackupOptions> options, 
         return path;
     }
 
-    public Task<BackupArtifact?> FindAsync(BackupLocation location, CancellationToken cancellationToken) =>
-        StorageAsync(() =>
+    public async Task<BackupArtifact?> FindAsync(BackupLocation location, CancellationToken cancellationToken)
+    {
+        var file = await StorageAsync(() => new FileInfo(PathFor(location)));
+        if (!file.Exists)
         {
-            var file = new FileInfo(PathFor(location));
-            return file.Exists ? new BackupArtifact(Type, file.FullName, file.Length) : null;
-        });
+            return null;
+        }
+
+        // A file at the final path was verified when it was put there. Its checksum is taken
+        // from the bytes that are there now, since those are what a restore will be given.
+        return new BackupArtifact(Type, file.FullName, file.Length, await HashAsync(file.FullName, cancellationToken));
+    }
+
+    private async Task<string> HashAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await hasher.ComputeAsync(path, cancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageFailed, "The backup could not be read back from the backup storage.", exception);
+        }
+    }
 
     public Task<IBackupStaging> BeginAsync(BackupLocation location, CancellationToken cancellationToken) =>
         StorageAsync<IBackupStaging>(() =>
@@ -175,7 +202,48 @@ public sealed partial class LocalBackupStorage(IOptions<BackupOptions> options, 
 
         public string FilePath => stagingPath;
 
-        public Task<BackupArtifact> CommitAsync(CancellationToken cancellationToken) =>
+        public async Task<BackupArtifact> CommitAsync(string checksum, CancellationToken cancellationToken)
+        {
+            var artifact = await FinalizeAsync();
+
+            // Not the checksum the caller calculated before the move: the one of the file as it
+            // is on disk now, in its final place.
+            string stored;
+            try
+            {
+                stored = await storage.HashAsync(artifact.Path, cancellationToken);
+            }
+            catch
+            {
+                Remove(artifact.Path);
+                throw;
+            }
+
+            if (!string.Equals(stored, checksum, StringComparison.Ordinal))
+            {
+                // What is at the final path is not the backup; it must not stay there to be found.
+                Remove(artifact.Path);
+                storage.Log.LogWarning("The stored artifact does not have the checksum of the file that was written");
+                throw new BackupOperationException(
+                    BackupErrorCodes.BackupChecksumMismatch, "The stored backup does not match the backup that was written.");
+            }
+
+            return artifact with { Checksum = stored };
+        }
+
+        private void Remove(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                storage.Log.LogWarning(exception, "An unverified backup file could not be removed");
+            }
+        }
+
+        private Task<BackupArtifact> FinalizeAsync() =>
             StorageAsync(() =>
             {
                 // On disk before it is given its final name, so a crash cannot leave a finished-looking, empty file.

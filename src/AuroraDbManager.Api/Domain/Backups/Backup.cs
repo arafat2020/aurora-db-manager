@@ -9,6 +9,7 @@ namespace AuroraDbManager.Api.Domain.Backups;
 public sealed class Backup
 {
     public const int PathMaxLength = 1024;
+    public const int ChecksumLength = 64;
     public const int ErrorCodeMaxLength = 64;
     public const int ErrorMessageMaxLength = 1024;
 
@@ -30,6 +31,18 @@ public sealed class Backup
 
     /// <summary>Size of the finished artifact; null until the backup is <see cref="BackupStatus.Completed"/>.</summary>
     public long? SizeBytes { get; private set; }
+
+    /// <summary>
+    /// How <see cref="Checksum"/> was calculated; null exactly when there is no checksum.
+    /// </summary>
+    public BackupChecksumAlgorithm? ChecksumAlgorithm { get; private set; }
+
+    /// <summary>
+    /// The checksum of the artifact's bytes as they are in the storage, verified there before the
+    /// backup was completed. Null until then, and null for good on a backup completed before
+    /// checksums existed: such a backup is still a backup, with nothing recorded to check it against.
+    /// </summary>
+    public string? Checksum { get; private set; }
 
     public DateTime CreatedAt { get; private set; }
 
@@ -65,19 +78,32 @@ public sealed class Backup
         Status = BackupStatus.Running;
     }
 
-    /// <summary><c>running → completed</c>; the artifact is finished and in its final place.</summary>
-    public void MarkCompleted(string path, long sizeBytes, DateTime utcNow)
+    /// <summary>
+    /// <c>running → completed</c>; the artifact is finished, in its final place, and its bytes
+    /// there have the given checksum. A backup is never completed without one.
+    /// </summary>
+    public void MarkCompleted(string path, long sizeBytes, BackupChecksumAlgorithm checksumAlgorithm, string checksum, DateTime utcNow)
     {
         EnsureStatus(nameof(MarkCompleted), BackupStatus.Running);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(path.Length, PathMaxLength, nameof(path));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sizeBytes);
+        if (!IsChecksum(checksum))
+        {
+            throw new ArgumentException($"A checksum is {ChecksumLength} lowercase hexadecimal characters.", nameof(checksum));
+        }
 
         Status = BackupStatus.Completed;
         Path = path;
         SizeBytes = sizeBytes;
+        ChecksumAlgorithm = checksumAlgorithm;
+        Checksum = checksum;
         CompletedAt = utcNow;
     }
+
+    /// <summary>Whether the text has the form of a checksum: 64 lowercase hexadecimal characters.</summary>
+    public static bool IsChecksum(string? value) =>
+        value is { Length: ChecksumLength } && value.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
     /// <summary><c>running → failed</c>; there is no artifact. The code and message are shown to API clients.</summary>
     public void MarkFailed(string errorCode, string errorMessage, DateTime utcNow)

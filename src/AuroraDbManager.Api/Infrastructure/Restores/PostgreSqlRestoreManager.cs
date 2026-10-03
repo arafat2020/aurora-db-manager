@@ -44,10 +44,11 @@ public sealed partial class PostgreSqlRestoreManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<PostgreSqlRestoreManager> logger,
     Func<string, DbConnection>? connectionFactory = null)
-    : DumpRestoreManager(storage, endpoints, secrets, processes, options, logger)
+    : DumpRestoreManager(storage, endpoints, secrets, processes, hasher, options, logger)
 {
     /// <summary>Ends every other session connected to the database this session is on.</summary>
     public const string TerminateSessionsSql =

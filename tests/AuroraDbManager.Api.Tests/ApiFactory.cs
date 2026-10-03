@@ -77,6 +77,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     public FakeInstanceEndpoints Endpoints { get; } = new();
 
+    /// <summary>The real artifact hasher, which a test can make fail or hold.</summary>
+    public FaultInjectingHasher Hasher { get; } = new();
+
     /// <summary>The object store behind S3 backup storage. Unused unless a test selects that storage.</summary>
     public FakeS3ObjectStore ObjectStore { get; } = new();
 
@@ -256,6 +259,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             }
 
             services.AddSingleton<ILoggerProvider>(Logs);
+            services.RemoveAll<IArtifactHasher>();
+            services.AddSingleton<IArtifactHasher>(Hasher);
             services.Configure<BackupOptions>(options =>
             {
                 options.Local.RootPath = BackupRoot;

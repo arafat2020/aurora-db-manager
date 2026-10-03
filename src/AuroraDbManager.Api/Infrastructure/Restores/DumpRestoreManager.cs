@@ -19,8 +19,10 @@ namespace AuroraDbManager.Api.Infrastructure.Restores;
 /// <remarks>
 /// <para>
 /// <b>Order of events.</b> (1) The artifact is fetched from the backup storage into the attempt's
-/// own directory as a <c>.partial</c> file. (2) It must have exactly the size the backup records
-/// and look like a dump of the engine; only then is it given its final name. (3) The restore
+/// own directory as a <c>.partial</c> file. (2) It must have exactly the size the backup records,
+/// the SHA-256 the backup records, and look like a dump of the engine; only then is it given its
+/// final name. A backup completed before checksums were recorded has none to compare with and is
+/// held to size and format only. (3) The restore
 /// program is run once without a database, to prove that it is installed and can read the
 /// artifact. Up to here nothing has touched the database, and a failure leaves it as it was.
 /// (4) The sessions connected to the target database are ended and the database is emptied.
@@ -45,6 +47,7 @@ public abstract class DumpRestoreManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger logger) : IRestoreManager
 {
@@ -188,7 +191,7 @@ public abstract class DumpRestoreManager(
         try
         {
             await storage.DownloadAsync(
-                new BackupArtifact(backup.StorageType, backup.Path!, backup.SizeBytes!.Value), partialPath, cancellationToken);
+                new BackupArtifact(backup.StorageType, backup.Path!, backup.SizeBytes!.Value, backup.Checksum), partialPath, cancellationToken);
         }
         catch (BackupOperationException exception)
         {
@@ -203,9 +206,41 @@ public abstract class DumpRestoreManager(
             };
         }
 
-        // A file that is not exactly what the backup recorded is not that backup.
+        // A file that is not exactly what the backup recorded is not that backup. Size first:
+        // it costs nothing.
         var size = new FileInfo(partialPath).Length;
-        if (size == 0 || size != backup.SizeBytes || !await IsDumpAsync(partialPath, cancellationToken))
+        if (size == 0 || size != backup.SizeBytes)
+        {
+            logger.LogWarning(
+                "The artifact of backup {BackupId} is {SizeBytes} bytes, recorded as {RecordedSizeBytes}",
+                backup.Id, size, backup.SizeBytes);
+            throw new RestoreOperationException(
+                RestoreErrorCodes.RestoreArtifactInvalid, "The backup's artifact is not the backup that was stored.");
+        }
+
+        if (backup.Checksum is not null)
+        {
+            // Every byte of what was fetched, against what was verified when the backup completed.
+            var checksum = await hasher.ComputeAsync(partialPath, cancellationToken);
+            if (!string.Equals(checksum, backup.Checksum, StringComparison.Ordinal))
+            {
+                // Both values are safe to log; neither goes to the client.
+                logger.LogWarning(
+                    "The artifact of backup {BackupId} has checksum {Checksum}, recorded as {RecordedChecksum}",
+                    backup.Id, checksum, backup.Checksum);
+                throw new RestoreOperationException(
+                    RestoreErrorCodes.RestoreArtifactChecksumMismatch,
+                    "The backup's artifact does not have the checksum recorded for the backup.");
+            }
+        }
+        else
+        {
+            // Completed before checksums existed: there is nothing to compare with, and no
+            // checksum is made up for it. It is held to its size and format, as it always was.
+            logger.LogInformation("Backup {BackupId} has no recorded checksum; its artifact is checked by size and format only", backup.Id);
+        }
+
+        if (!await IsDumpAsync(partialPath, cancellationToken))
         {
             logger.LogWarning(
                 "The artifact of backup {BackupId} is {SizeBytes} bytes, recorded as {RecordedSizeBytes}, or is not a dump",

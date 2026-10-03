@@ -23,9 +23,10 @@ public sealed class MySqlBackupManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<MySqlBackupManager> logger)
-    : DumpBackupManager(storage, endpoints, secrets, processes, options, logger)
+    : DumpBackupManager(storage, endpoints, secrets, processes, hasher, options, logger)
 {
     private const string AdminUser = MySqlDumpFormat.AdminUser;
 

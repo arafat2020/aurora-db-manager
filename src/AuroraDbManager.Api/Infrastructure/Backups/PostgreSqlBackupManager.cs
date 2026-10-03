@@ -18,9 +18,10 @@ public sealed class PostgreSqlBackupManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<PostgreSqlBackupManager> logger)
-    : DumpBackupManager(storage, endpoints, secrets, processes, options, logger)
+    : DumpBackupManager(storage, endpoints, secrets, processes, hasher, options, logger)
 {
     private const string AdminUser = PostgresDumpFormat.AdminUser;
 

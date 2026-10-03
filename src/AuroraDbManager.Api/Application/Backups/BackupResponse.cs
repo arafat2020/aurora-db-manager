@@ -8,6 +8,11 @@ namespace AuroraDbManager.Api.Application.Backups;
 /// <param name="Status">State of the backup: <c>pending</c>, <c>running</c>, <c>completed</c> or <c>failed</c>.</param>
 /// <param name="StorageType">Where the backup is kept: <c>local</c> or <c>s3</c>.</param>
 /// <param name="SizeBytes">Size of the finished backup in bytes; null until it is <c>completed</c>.</param>
+/// <param name="ChecksumAlgorithm">How <paramref name="Checksum"/> was calculated: <c>sha256</c>. Null when there is no checksum.</param>
+/// <param name="Checksum">
+/// SHA-256 of the stored backup's bytes, as 64 lowercase hexadecimal characters, verified before
+/// the backup was completed. Null until then, and on backups completed before checksums existed.
+/// </param>
 /// <param name="CreatedAt">UTC time the backup was requested.</param>
 /// <param name="CompletedAt">UTC time the backup reached <c>completed</c> or <c>failed</c>; null until then.</param>
 /// <param name="Error">Why the backup is <c>failed</c>; null in every other status.</param>
@@ -19,6 +24,8 @@ public sealed record BackupResponse(
     BackupStatus Status,
     BackupStorageType StorageType,
     long? SizeBytes,
+    BackupChecksumAlgorithm? ChecksumAlgorithm,
+    string? Checksum,
     DateTime CreatedAt,
     DateTime? CompletedAt,
     BackupErrorResponse? Error)
@@ -29,6 +36,8 @@ public sealed record BackupResponse(
         backup.Status,
         backup.StorageType,
         backup.SizeBytes,
+        backup.ChecksumAlgorithm,
+        backup.Checksum,
         backup.CreatedAt,
         backup.CompletedAt,
         backup.ErrorCode is null ? null : new BackupErrorResponse(backup.ErrorCode, backup.ErrorMessage ?? string.Empty));

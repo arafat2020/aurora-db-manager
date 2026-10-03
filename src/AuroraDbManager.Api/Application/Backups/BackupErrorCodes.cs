@@ -33,6 +33,9 @@ public static class BackupErrorCodes
     /// <summary>The upload was reported as done, but the stored object is not what was uploaded.</summary>
     public const string BackupStorageVerificationFailed = "BACKUP_STORAGE_VERIFICATION_FAILED";
 
+    /// <summary>What the storage holds after the backup was stored does not have the checksum of what was written.</summary>
+    public const string BackupChecksumMismatch = "BACKUP_CHECKSUM_MISMATCH";
+
     /// <summary>The backup's artifact is not in the storage, at the place its metadata names.</summary>
     public const string BackupArtifactNotFound = "BACKUP_ARTIFACT_NOT_FOUND";
 

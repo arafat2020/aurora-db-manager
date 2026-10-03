@@ -101,6 +101,7 @@ builder.Services.AddSingleton<IValidateOptions<BackupOptions>, BackupOptionsVali
 
 // Both storages exist; Backups:StorageType alone decides which one new backups go to. The S3
 // client is created on first use, so local storage needs no S3 settings and no AWS credentials.
+builder.Services.AddSingleton<IArtifactHasher, Sha256ArtifactHasher>();
 builder.Services.AddSingleton<LocalBackupStorage>();
 builder.Services.AddSingleton<IS3ObjectClient, AwsS3ObjectClient>();
 builder.Services.AddSingleton<S3BackupStorage>();

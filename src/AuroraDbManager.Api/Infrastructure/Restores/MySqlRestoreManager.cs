@@ -44,10 +44,11 @@ public sealed class MySqlRestoreManager(
     IInstanceEndpointResolver endpoints,
     IInstanceSecretStore secrets,
     IProcessRunner processes,
+    IArtifactHasher hasher,
     IOptions<BackupOptions> options,
     ILogger<MySqlRestoreManager> logger,
     Func<string, DbConnection>? connectionFactory = null)
-    : DumpRestoreManager(storage, endpoints, secrets, processes, options, logger)
+    : DumpRestoreManager(storage, endpoints, secrets, processes, hasher, options, logger)
 {
     private static readonly MySqlCommandBuilder Quoting = new();
 

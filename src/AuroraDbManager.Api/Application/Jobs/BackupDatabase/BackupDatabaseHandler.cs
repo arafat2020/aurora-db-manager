@@ -10,7 +10,7 @@ namespace AuroraDbManager.Api.Application.Jobs.BackupDatabase;
 
 /// <summary>
 /// Produces the job's backup through <see cref="IBackupManager"/> and reports the result on the
-/// backup: <c>completed</c> with the artifact's location and size, or <c>failed</c> once the job
+/// backup: <c>completed</c> with the artifact's location, size and verified checksum, or <c>failed</c> once the job
 /// has failed for good. While the job retries, the backup stays <c>running</c>. The database's
 /// own status is never touched: a backup that fails says nothing about the database.
 /// </summary>
@@ -104,7 +104,15 @@ public sealed class BackupDatabaseHandler(
             throw new JobExecutionException(BackupErrorCodes.BackupArtifactInvalid, "The backup is empty.");
         }
 
-        backup.MarkCompleted(artifact.Path, artifact.SizeBytes, timeProvider.GetUtcNow().UtcDateTime);
+        // The storage vouches for the artifact with the checksum it verified; without one the
+        // backup is not completed.
+        if (!Backup.IsChecksum(artifact.Checksum))
+        {
+            throw new JobExecutionException(BackupErrorCodes.BackupArtifactInvalid, "The backup has no verified checksum.");
+        }
+
+        backup.MarkCompleted(
+            artifact.Path, artifact.SizeBytes, BackupChecksumAlgorithm.Sha256, artifact.Checksum!, timeProvider.GetUtcNow().UtcDateTime);
     }
 
     public async Task OnFailedAsync(Job job, CancellationToken cancellationToken)

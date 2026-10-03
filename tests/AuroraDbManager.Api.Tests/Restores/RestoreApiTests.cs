@@ -204,7 +204,8 @@ public sealed class RestoreApiTests : IDisposable
         {
             var backup = Backup.Create(databaseId, BackupStorageType.S3, DateTime.UtcNow);
             backup.MarkRunning();
-            backup.MarkCompleted("backups/instances/a/databases/b/c.dump", 100, DateTime.UtcNow);
+            backup.MarkCompleted(
+                "backups/instances/a/databases/b/c.dump", 100, BackupChecksumAlgorithm.Sha256, new string('a', 64), DateTime.UtcNow);
             db.Backups.Add(backup);
             await db.SaveChangesAsync();
             return backup.Id;

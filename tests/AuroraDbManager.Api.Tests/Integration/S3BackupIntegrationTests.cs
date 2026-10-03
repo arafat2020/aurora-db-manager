@@ -205,7 +205,9 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         await using (var staging = await storage.BeginAsync(location, default))
         {
             await File.WriteAllTextAsync(staging.FilePath, "connectivity check");
-            var artifact = await staging.CommitAsync(default);
+            var checksum = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData("connectivity check"u8));
+            var artifact = await staging.CommitAsync(checksum, default);
+            Assert.Equal(checksum, artifact.Checksum);
             Assert.Equal(BackupStorageType.S3, artifact.StorageType);
             Assert.Equal(18, artifact.SizeBytes);
         }
@@ -467,6 +469,12 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.dump";
         var uploaded = await _s3.GetObjectMetadataAsync(Bucket, key);
+        // The recorded checksum is the SHA-256 of the object's bytes, as the store returns them;
+        // it is not the object's ETag.
+        var recorded = (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString();
+        Assert.Equal(await ObjectSha256Async(key), recorded);
+        Assert.Equal(recorded, uploaded.Metadata["aurora-checksum-sha256"]);
+        Assert.NotEqual(recorded, uploaded.ETag.Trim('"'));
         await ExecAsync(instanceId, $"{Psql} -d shop -c \"delete from customers where id = 1; insert into customers values (3, 'carol'); create table added_later (id int);\"");
 
         var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
@@ -505,6 +513,7 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.sql";
         var uploaded = await _s3.GetObjectMetadataAsync(Bucket, key);
+        Assert.Equal(await ObjectSha256Async(key), (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString());
         await ExecAsync(instanceId, $"{Mysql} shop -e \"delete from customers where id = 1; insert into customers values (3, 'carol'); create table added_later (id int);\"");
 
         var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
@@ -519,6 +528,67 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
         Assert.Equal(uploaded.LastModified, after.LastModified);
         Assert.Equal([key], await ObjectKeysAsync());
         Assert.Empty(_factory.RestoreStagingEntries());
+    }
+
+    [DockerFact]
+    public Task Postgres_ObjectReplacedByOtherBytesOfTheSameSize_RestoreFailsItsChecksum_AndTheDatabaseIsLeftExactlyAsItWas() =>
+        SameSizeCorruptionIsRejectedAsync("postgres", "16", "dump");
+
+    [DockerFact]
+    public Task Mysql_ObjectReplacedByOtherBytesOfTheSameSize_RestoreFailsItsChecksum_AndTheDatabaseIsLeftExactlyAsItWas() =>
+        SameSizeCorruptionIsRejectedAsync("mysql", "8.4", "sql");
+
+    private async Task SameSizeCorruptionIsRejectedAsync(string engine, string version, string extension)
+    {
+        var (instanceId, databaseId) = await CreateDatabaseAsync(_factory, _client, engine, version, "shop");
+        var client = engine == "postgres" ? $"{Psql} -d shop -c" : $"{Mysql} shop -e";
+        await ExecAsync(instanceId, $"{client} \"create table customers (name varchar(50)); insert into customers values ('alice');\"");
+        var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
+        var key = $"backups/instances/{instanceId:D}/databases/{databaseId:D}/{backupId:D}.{extension}";
+        var recorded = (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString()!;
+        await ExecAsync(instanceId, $"{client} \"delete from customers; insert into customers values ('carol');\"");
+
+        // Someone with access to the bucket puts other bytes under the backup's key: as many as
+        // before, and for a MySQL script still ending as a finished dump does.
+        byte[] content;
+        using (var response = await _s3.GetObjectAsync(Bucket, key))
+        using (var buffer = new MemoryStream())
+        {
+            await response.ResponseStream.CopyToAsync(buffer);
+            content = buffer.ToArray();
+        }
+
+        for (var i = content.Length / 2; i < content.Length / 2 + 4; i++)
+        {
+            content[i] ^= 0x20;
+        }
+
+        using (var changed = new MemoryStream(content))
+        {
+            await _s3.PutObjectAsync(new PutObjectRequest { BucketName = Bucket, Key = key, InputStream = changed });
+        }
+
+        Assert.Equal(content.Length, (await _s3.GetObjectMetadataAsync(Bucket, key)).ContentLength);
+        Assert.Equal(content.Length, (await _client.GetBackupAsync(backupId)).GetProperty("sizeBytes").GetInt64());
+        Assert.NotEqual(recorded, await ObjectSha256Async(key));
+
+        var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
+        await _factory.ProcessJobAsync(jobId);
+
+        var job = await _client.GetJobAsync(jobId);
+        Assert.Equal("failed", job.Status());
+        Assert.Equal(3, job.GetProperty("attempt").GetInt32());
+        Assert.Equal("RESTORE_ARTIFACT_CHECKSUM_MISMATCH", job.GetProperty("error").GetProperty("code").GetString());
+        Assert.DoesNotContain(recorded, job.GetRawText());
+
+        // The database was not emptied: what was in it before the request is still there.
+        var query = engine == "postgres"
+            ? $"{Psql} -d shop -tAc \"select string_agg(name, ',') from customers\""
+            : $"{Mysql} shop -N -B -e \"select group_concat(name) from customers\"";
+        await ExecAsync(instanceId, $"{query} | grep -qxF -- 'carol'");
+        Assert.Empty(_factory.RestoreStagingEntries());
+        // The backup's record still says what the backup was, not what is in the bucket now.
+        Assert.Equal(recorded, (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString());
     }
 
     [DockerFact]
@@ -601,6 +671,13 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
     {
         var job = await client.GetJobAsync(jobId);
         Assert.True(job.Status() == "completed", $"Job is {job.Status()}: {job.GetProperty("error").GetRawText()}");
+    }
+
+    /// <summary>The SHA-256 of an object's bytes, fetched with the test's own client.</summary>
+    private async Task<string> ObjectSha256Async(string key)
+    {
+        using var response = await _s3.GetObjectAsync(Bucket, key);
+        return Convert.ToHexStringLower(await System.Security.Cryptography.SHA256.HashDataAsync(response.ResponseStream));
     }
 
     /// <summary>The keys of every object in the test's bucket, asked of the store itself.</summary>

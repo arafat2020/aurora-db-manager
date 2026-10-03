@@ -12,6 +12,9 @@ public static class RestoreErrorCodes
     /// <summary>What was fetched is not the backup that was stored: wrong size, or not a readable dump.</summary>
     public const string RestoreArtifactInvalid = "RESTORE_ARTIFACT_INVALID";
 
+    /// <summary>What was fetched has the recorded size but not the checksum recorded for the backup.</summary>
+    public const string RestoreArtifactChecksumMismatch = "RESTORE_ARTIFACT_CHECKSUM_MISMATCH";
+
     /// <summary>The restore program is not installed, cannot be started, or is too old for the backup.</summary>
     public const string RestoreToolUnavailable = "RESTORE_TOOL_UNAVAILABLE";
 

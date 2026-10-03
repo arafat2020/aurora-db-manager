@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using Docker.DotNet;
 using Docker.DotNet.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using static AuroraDbManager.Api.Tests.ApiClientExtensions;
 
@@ -111,6 +112,10 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
         var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         var artifact = _factory.BackupFilePath(instanceId, databaseId, backupId, "dump");
         var artifactHash = await HashAsync(artifact);
+        // The backup records the SHA-256 of the archive pg_dump wrote, as it is on disk.
+        var backup = await _client.GetBackupAsync(backupId);
+        Assert.Equal("sha256", backup.GetProperty("checksumAlgorithm").GetString());
+        Assert.Equal(artifactHash.ToLowerInvariant(), backup.GetProperty("checksum").GetString());
 
         // Everything a restore has to undo: changed, deleted and added rows; a changed table; and
         // tables, a schema and a large object that did not exist when the backup was made.
@@ -214,22 +219,34 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
     }
 
     [DockerFact]
-    public async Task Postgres_ArtifactCorrupted_FailsAsArtifactInvalid_BeforeAnythingIsRemovedFromTheDatabase()
+    public async Task Postgres_ArtifactCorruptedWithoutChangingItsSize_FailsItsChecksum_BeforeAnythingIsRemovedFromTheDatabase()
     {
         var (instanceId, databaseId, backupId) = await PostgresWithBackupThenChangedAsync();
         var artifact = _factory.BackupFilePath(instanceId, databaseId, backupId, "dump");
-        // The recorded size, the archive signature and the format version are intact; the table of
-        // contents and everything after it are not.
+        var recorded = (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString();
+        // A few bytes in the middle of the archive's data, replaced by as many others: the size,
+        // the signature and the table of contents are as they were.
         var bytes = await File.ReadAllBytesAsync(artifact);
-        Array.Fill<byte>(bytes, 0x58, 16, bytes.Length - 16);
+        var original = bytes.Length;
+        for (var i = bytes.Length - 40; i < bytes.Length - 36; i++)
+        {
+            bytes[i] ^= 0xFF;
+        }
+
         await File.WriteAllBytesAsync(artifact, bytes);
+        Assert.Equal(original, new FileInfo(artifact).Length);
+        Assert.NotEqual(recorded, (await HashAsync(artifact)).ToLowerInvariant());
 
         var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
         await _factory.ProcessJobAsync(jobId);
 
         var job = await _client.GetJobAsync(jobId);
         Assert.Equal("failed", job.Status());
-        Assert.Equal("RESTORE_ARTIFACT_INVALID", job.GetProperty("error").GetProperty("code").GetString());
+        Assert.Equal(3, job.GetProperty("attempt").GetInt32());
+        Assert.Equal("RESTORE_ARTIFACT_CHECKSUM_MISMATCH", job.GetProperty("error").GetProperty("code").GetString());
+        Assert.DoesNotContain(recorded!, job.GetRawText());
+        // pg_restore was never started, not even to look at the file.
+        Assert.DoesNotContain(_factory.Logs.Entries, entry => entry.Contains("Starting pg_restore", StringComparison.Ordinal));
         Assert.DoesNotContain("pg_restore:", job.GetRawText());
         await AssertPostgresAsync(instanceId, "shop", "select string_agg(name, ',' order by name) from customers", "carol");
         Assert.Empty(_factory.RestoreStagingEntries());
@@ -359,6 +376,7 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
         var backupId = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         var artifact = _factory.BackupFilePath(instanceId, databaseId, backupId, "sql");
         var artifactHash = await HashAsync(artifact);
+        Assert.Equal(artifactHash.ToLowerInvariant(), (await _client.GetBackupAsync(backupId)).GetProperty("checksum").GetString());
 
         await MysqlAsync(instanceId, "shop",
             "delete from orders; delete from customers where id = 1; update customers set name = 'robert' where id = 2; insert into customers values (3, 'carol');"
@@ -415,7 +433,7 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
     }
 
     [DockerFact]
-    public async Task Mysql_ArtifactMissingOrCutShort_FailsBeforeAnythingIsRemovedFromTheDatabase()
+    public async Task Mysql_ArtifactMissing_OrChangedWithoutChangingItsSize_FailsBeforeAnythingIsRemovedFromTheDatabase()
     {
         var instanceId = await CreateInstanceAsync("mysql", "8.4");
         var databaseId = await _factory.CreateReadyDatabaseAsync(_client, instanceId, "shop");
@@ -424,14 +442,18 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
         var missing = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         await MysqlAsync(instanceId, "shop", "delete from customers; insert into customers values ('carol');");
 
-        // One dump that lost its end but kept its size, and one that is gone.
+        // One dump with a changed row, of the same size and still ending as a dump should, which
+        // only its checksum can tell from the original; and one that is gone.
         var cutShortPath = _factory.BackupFilePath(instanceId, databaseId, cutShort, "sql");
-        var bytes = await File.ReadAllBytesAsync(cutShortPath);
-        Array.Fill<byte>(bytes, (byte)' ', bytes.Length - 200, 200);
-        await File.WriteAllBytesAsync(cutShortPath, bytes);
+        var script = await File.ReadAllTextAsync(cutShortPath);
+        Assert.Contains("'alice'", script);
+        await File.WriteAllTextAsync(cutShortPath, script.Replace("'alice'", "'mallo'"));
+        Assert.Equal(script.Length, new FileInfo(cutShortPath).Length);
+        Assert.EndsWith("\n", script);
+        Assert.Contains("-- Dump completed", await File.ReadAllTextAsync(cutShortPath));
         File.Delete(_factory.BackupFilePath(instanceId, databaseId, missing, "sql"));
 
-        foreach (var (backupId, expectedCode) in new[] { (cutShort, "RESTORE_ARTIFACT_INVALID"), (missing, "RESTORE_ARTIFACT_NOT_FOUND") })
+        foreach (var (backupId, expectedCode) in new[] { (cutShort, "RESTORE_ARTIFACT_CHECKSUM_MISMATCH"), (missing, "RESTORE_ARTIFACT_NOT_FOUND") })
         {
             var jobId = await ApiFactory.RequestRestoreAsync(_client, backupId);
             await _factory.ProcessJobAsync(jobId);
@@ -446,7 +468,7 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
     }
 
     [DockerFact]
-    public async Task Mysql_RestoreProgramFails_TheJobFailsWithASafeError_TheDatabaseMayBeEmpty_AndAnotherRestoreRepairsIt()
+    public async Task Mysql_LegacyBackupWithoutChecksum_WhoseLoadFails_TheJobFailsWithASafeError_TheDatabaseMayBeEmpty_AndAnotherRestoreRepairsIt()
     {
         var instanceId = await CreateInstanceAsync("mysql", "8.4");
         var databaseId = await _factory.CreateReadyDatabaseAsync(_client, instanceId, "shop");
@@ -454,8 +476,11 @@ public sealed class RestoreIntegrationTests : IAsyncLifetime
         var broken = await _factory.CreateCompletedBackupAsync(_client, databaseId);
         var good = await _factory.CreateCompletedBackupAsync(_client, databaseId);
 
-        // A dump of the right size that ends as a dump should, and is not valid SQL in between:
-        // nothing can tell before the mysql client is actually given it.
+        // A backup from before checksums were recorded, whose dump has the right size, ends as a
+        // dump should, and is not valid SQL in between: without a checksum nothing can tell before
+        // the mysql client is actually given it.
+        await _factory.WithDbAsync(db => db.Database.ExecuteSqlAsync(
+            $"UPDATE backups SET checksum = NULL, checksum_algorithm = NULL WHERE id = {broken}"));
         var brokenPath = _factory.BackupFilePath(instanceId, databaseId, broken, "sql");
         var script = await File.ReadAllTextAsync(brokenPath);
         Assert.Contains("CREATE TABLE", script);

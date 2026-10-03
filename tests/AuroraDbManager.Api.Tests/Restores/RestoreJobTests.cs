@@ -376,12 +376,12 @@ public sealed class RestoreJobTests : IDisposable
     }
 
     [Theory]
-    [InlineData("postgres", "truncated")]
-    [InlineData("postgres", "grown")]
-    [InlineData("postgres", "not an archive")]
-    [InlineData("mysql", "truncated")]
-    [InlineData("mysql", "cut short")]
-    public async Task ArtifactIsNotTheBackupThatWasStored_FailsAsArtifactInvalid_AndTheDatabaseIsNeverTouched(string engine, string damage)
+    [InlineData("postgres", "truncated", "RESTORE_ARTIFACT_INVALID")]
+    [InlineData("postgres", "grown", "RESTORE_ARTIFACT_INVALID")]
+    [InlineData("postgres", "not an archive", "RESTORE_ARTIFACT_CHECKSUM_MISMATCH")]
+    [InlineData("mysql", "truncated", "RESTORE_ARTIFACT_INVALID")]
+    [InlineData("mysql", "cut short", "RESTORE_ARTIFACT_CHECKSUM_MISMATCH")]
+    public async Task ArtifactIsNotTheBackupThatWasStored_IsRejected_AndTheDatabaseIsNeverTouched(string engine, string damage, string expectedCode)
     {
         var (_, _, backupId, artifactPath) = await CreateBackedUpDatabaseAsync(engine);
         var original = await File.ReadAllBytesAsync(artifactPath);
@@ -397,7 +397,8 @@ public sealed class RestoreJobTests : IDisposable
         var job = await RestoreAsync(backupId);
 
         Assert.Equal("failed", job.Status());
-        Assert.Equal("RESTORE_ARTIFACT_INVALID", job.GetProperty("error").GetProperty("code").GetString());
+        // A wrong size is caught as such; the right size with other bytes is caught by the checksum.
+        Assert.Equal(expectedCode, job.GetProperty("error").GetProperty("code").GetString());
         Assert.Empty(Tools.RunsOf(FakeDumpTools.PgRestore));
         Assert.Empty(Tools.RunsOf(FakeDumpTools.MySql));
         Assert.Empty(Sql);

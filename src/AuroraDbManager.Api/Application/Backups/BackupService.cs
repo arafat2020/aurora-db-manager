@@ -12,6 +12,7 @@ namespace AuroraDbManager.Api.Application.Backups;
 /// <summary>
 /// Accepts backup requests and hands them to the job system. Nothing here touches a database
 /// engine or the backup storage; the job's handler does that through <see cref="IBackupManager"/>.
+/// A new backup is for the storage the server is configured with; a client cannot choose one.
 /// </summary>
 public sealed class BackupService(
     AppDbContext db,

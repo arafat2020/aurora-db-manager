@@ -25,6 +25,7 @@ namespace AuroraDbManager.Api.Tests.Integration;
 /// <c>pg_restore --list</c> for PostgreSQL and as text for MySQL.
 /// </remarks>
 [Trait("Category", "DockerIntegration")]
+[Collection(BackupIntegrationCollection.Name)]
 public sealed class BackupIntegrationTests : IAsyncLifetime
 {
     private static readonly bool Enabled = Environment.GetEnvironmentVariable(DockerFactAttribute.EnableVariable) == "1";
@@ -421,4 +422,14 @@ public sealed class BackupIntegrationTests : IAsyncLifetime
             await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
         }
     }
+}
+
+/// <summary>
+/// The integration tests that run the dump programs do so one class after the other: they check
+/// that no credential file is left in the temporary directory, which they share.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class BackupIntegrationCollection
+{
+    public const string Name = "Backup integration";
 }

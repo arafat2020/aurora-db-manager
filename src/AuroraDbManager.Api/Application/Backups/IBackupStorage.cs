@@ -4,7 +4,8 @@ namespace AuroraDbManager.Api.Application.Backups;
 
 /// <summary>
 /// Where backup artifacts are kept. An artifact is addressed by ids only; the storage alone
-/// decides what that means as a path, so nothing a client supplies ever becomes part of one.
+/// decides what that means as a path or an object key, so nothing a client supplies ever becomes
+/// part of one.
 /// </summary>
 /// <remarks>
 /// An artifact comes into existence in one step. It is written to a staging file, which is not an
@@ -23,9 +24,6 @@ public interface IBackupStorage
     /// attempt left unfinished and provides an empty local file to write to.
     /// </summary>
     Task<IBackupStaging> BeginAsync(BackupLocation location, CancellationToken cancellationToken);
-
-    /// <summary>Removes the artifact at <paramref name="location"/> and anything unfinished for it. Succeeds if there is nothing.</summary>
-    Task DeleteAsync(BackupLocation location, CancellationToken cancellationToken);
 }
 
 /// <summary>An artifact being written. Disposing it without committing discards what was written.</summary>
@@ -34,7 +32,10 @@ public interface IBackupStaging : IAsyncDisposable
     /// <summary>The local file the backup program writes to. Exists, is empty, and is private to this attempt.</summary>
     string FilePath { get; }
 
-    /// <summary>Turns the staging file into the artifact, atomically, and returns the artifact as it then is.</summary>
+    /// <summary>
+    /// Turns the staging file into the artifact, atomically, and returns the artifact as it then
+    /// is in the storage. The staging file must be a complete, validated backup by now.
+    /// </summary>
     Task<BackupArtifact> CommitAsync(CancellationToken cancellationToken);
 }
 

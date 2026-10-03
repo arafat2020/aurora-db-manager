@@ -19,6 +19,20 @@ public static class BackupErrorCodes
     /// <summary>The artifact could not be written to, or finalized in, the backup storage.</summary>
     public const string BackupStorageFailed = "BACKUP_STORAGE_FAILED";
 
+    /// <summary>The object storage could not be reached, or answered with a server error.</summary>
+    public const string BackupStorageUnavailable = "BACKUP_STORAGE_UNAVAILABLE";
+
+    /// <summary>The object storage rejected the server's credentials, or none could be found.</summary>
+    public const string BackupStorageAuthFailed = "BACKUP_STORAGE_AUTH_FAILED";
+    public const string BackupStorageBucketNotFound = "BACKUP_STORAGE_BUCKET_NOT_FOUND";
+
+    /// <summary>The object storage was reached and refused or failed the upload.</summary>
+    public const string BackupStorageUploadFailed = "BACKUP_STORAGE_UPLOAD_FAILED";
+    public const string BackupStorageTimeout = "BACKUP_STORAGE_TIMEOUT";
+
+    /// <summary>The upload was reported as done, but the stored object is not what was uploaded.</summary>
+    public const string BackupStorageVerificationFailed = "BACKUP_STORAGE_VERIFICATION_FAILED";
+
     /// <summary>The backup is not in the status the job starts from, or is not the job's.</summary>
     public const string BackupInvalidState = "BACKUP_INVALID_STATE";
 

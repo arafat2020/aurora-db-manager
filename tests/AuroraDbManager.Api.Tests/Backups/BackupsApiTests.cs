@@ -328,7 +328,7 @@ public sealed class BackupsApiTests : IDisposable
         await Assert.ThrowsAnyAsync<DbException>(() => _factory.WithDbAsync(db =>
             db.Database.ExecuteSqlAsync($"UPDATE backups SET status = 'uploading' WHERE id = {backupId}")));
         await Assert.ThrowsAnyAsync<DbException>(() => _factory.WithDbAsync(db =>
-            db.Database.ExecuteSqlAsync($"UPDATE backups SET storage_type = 's3' WHERE id = {backupId}")));
+            db.Database.ExecuteSqlAsync($"UPDATE backups SET storage_type = 'tape' WHERE id = {backupId}")));
     }
 
     // --- Get and list -------------------------------------------------------------------------

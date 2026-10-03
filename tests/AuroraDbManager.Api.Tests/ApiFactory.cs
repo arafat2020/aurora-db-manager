@@ -5,6 +5,7 @@ using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
 using AuroraDbManager.Api.Infrastructure.Backups;
+using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Tests.Backups;
@@ -74,6 +75,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     public FakeInstanceEndpoints Endpoints { get; } = new();
 
+    /// <summary>The object store behind S3 backup storage. Unused unless a test selects that storage.</summary>
+    public FakeS3ObjectStore ObjectStore { get; } = new();
+
+    /// <summary>The local directory S3 backup storage stages backups in. Deleted with the factory.</summary>
+    public string StagingRoot { get; } =
+        Path.Combine(Path.GetTempPath(), $"aurora-db-manager-tests-staging-{Guid.NewGuid():N}");
+
     /// <summary>Everything the application logged.</summary>
     public RecordingLoggerProvider Logs { get; } = new();
 
@@ -93,8 +101,17 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     /// <summary>The path the local storage keeps a backup's artifact at.</summary>
     public string BackupFilePath(Guid instanceId, Guid databaseId, Guid backupId, string extension) =>
-        ((LocalBackupStorage)Services.GetRequiredService<IBackupStorage>())
+        Services.GetRequiredService<LocalBackupStorage>()
             .PathFor(new BackupLocation(instanceId, databaseId, backupId, extension));
+
+    /// <summary>The key the S3 storage keeps a backup's artifact under.</summary>
+    public string BackupObjectKey(Guid instanceId, Guid databaseId, Guid backupId, string extension) =>
+        Services.GetRequiredService<S3BackupStorage>()
+            .KeyFor(new BackupLocation(instanceId, databaseId, backupId, extension));
+
+    /// <summary>Every file in the directory backups are staged in before they are uploaded.</summary>
+    public IReadOnlyList<string> StagingFiles() =>
+        Directory.Exists(StagingRoot) ? Directory.GetFiles(StagingRoot, "*", SearchOption.AllDirectories) : [];
 
     /// <summary>Every file under the backup root, finished or not.</summary>
     public IReadOnlyList<string> BackupFiles() =>
@@ -218,6 +235,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             services.Configure<BackupOptions>(options =>
             {
                 options.Local.RootPath = BackupRoot;
+                options.S3.StagingPath = StagingRoot;
                 ConfigureBackups?.Invoke(options);
             });
 
@@ -227,6 +245,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IInstanceEndpointResolver>(Endpoints);
                 services.RemoveAll<IProcessRunner>();
                 services.AddSingleton<IProcessRunner>(DumpTools);
+                // Never the real client: an ordinary test must not be able to reach a network.
+                services.RemoveAll<IS3ObjectClient>();
+                services.AddSingleton<IS3ObjectClient>(ObjectStore);
 
                 services.RemoveAll<IDatabaseManager>();
                 services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Postgres));
@@ -269,9 +290,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         if (disposing)
         {
             TempDatabase.Delete(_ownDatabasePath);
-            if (Directory.Exists(_ownBackupRoot))
+            foreach (var directory in new[] { _ownBackupRoot, StagingRoot })
             {
-                Directory.Delete(_ownBackupRoot, recursive: true);
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
             }
         }
     }

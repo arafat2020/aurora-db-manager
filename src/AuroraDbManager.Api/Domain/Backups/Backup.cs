@@ -22,8 +22,9 @@ public sealed class Backup
     public BackupStorageType StorageType { get; private set; }
 
     /// <summary>
-    /// Where the artifact is, in terms of <see cref="StorageType"/>; null until the backup is
-    /// <see cref="BackupStatus.Completed"/>. Internal: never returned by the API.
+    /// Where the artifact is, in terms of <see cref="StorageType"/>: a filesystem path for
+    /// <see cref="BackupStorageType.Local"/>, an object key for <see cref="BackupStorageType.S3"/>.
+    /// Null until the backup is <see cref="BackupStatus.Completed"/>. Internal: never returned by the API.
     /// </summary>
     public string? Path { get; private set; }
 

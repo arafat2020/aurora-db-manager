@@ -28,10 +28,11 @@ namespace AuroraDbManager.Api.Infrastructure.Backups;
 /// program's diagnostics before they are logged.
 /// </para>
 /// <para>
-/// <b>Repeating an attempt.</b> The artifact's place is determined by the backup's id. If a
-/// finished artifact is already there, an earlier attempt completed it and was interrupted before
-/// that could be recorded; it is adopted as it is, since an artifact only ever appears there
-/// complete. An unfinished staging file is not a backup and is discarded and written again.
+/// <b>Repeating an attempt.</b> The artifact's place, a path or an object key, is determined by
+/// the backup's id. If a finished artifact is already there, an earlier attempt completed it and
+/// was interrupted before that could be recorded; it is adopted as it is, since an artifact only
+/// ever appears there complete. An unfinished staging file is not a backup and is discarded and
+/// written again.
 /// </para>
 /// </remarks>
 public abstract class DumpBackupManager(
@@ -67,6 +68,15 @@ public abstract class DumpBackupManager(
 
     public async Task<BackupArtifact> BackupAsync(Instance instance, Database database, Backup backup, CancellationToken cancellationToken)
     {
+        // A backup is stored where it was requested for. If the server's storage was changed
+        // while the backup waited, it is not quietly put somewhere else.
+        if (backup.StorageType != storage.Type)
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupInvalidState,
+                "The backup was requested for a backup storage that is no longer the configured one.");
+        }
+
         var location = new BackupLocation(instance.Id, database.Id, backup.Id, Extension);
 
         var finished = await storage.FindAsync(location, cancellationToken);
@@ -141,7 +151,9 @@ public abstract class DumpBackupManager(
         }
 
         var artifact = await staging.CommitAsync(cancellationToken);
-        logger.LogInformation("Backup {BackupId} finished: {SizeBytes} bytes", backup.Id, artifact.SizeBytes);
+        logger.LogInformation(
+            "Backup {BackupId} finished: {SizeBytes} bytes in {StorageType} storage",
+            backup.Id, artifact.SizeBytes, artifact.StorageType);
         return artifact;
     }
 

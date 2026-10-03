@@ -8,8 +8,10 @@ using AuroraDbManager.Api.Application.Jobs.BackupDatabase;
 using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
 using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
+using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Errors;
 using AuroraDbManager.Api.Infrastructure.Backups;
+using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
@@ -17,6 +19,7 @@ using AuroraDbManager.Api.Infrastructure.Secrets;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -88,9 +91,20 @@ builder.Services.AddScoped<IDatabaseManager, MySqlDatabaseManager>();
 // Backups run the engines' dump programs on this machine and keep the artifacts on its filesystem.
 builder.Services.AddOptions<BackupOptions>()
     .Bind(builder.Configuration.GetSection(BackupOptions.SectionName))
-    .Validate(options => options.Validate() is null, "The Backups configuration is invalid: Backups:Local:RootPath and the tool paths are required, and the timeouts must be in range.")
     .ValidateOnStart();
-builder.Services.AddSingleton<IBackupStorage, LocalBackupStorage>();
+builder.Services.AddSingleton<IValidateOptions<BackupOptions>, BackupOptionsValidator>();
+
+// Both storages exist; Backups:StorageType alone decides which one new backups go to. The S3
+// client is created on first use, so local storage needs no S3 settings and no AWS credentials.
+builder.Services.AddSingleton<LocalBackupStorage>();
+builder.Services.AddSingleton<IS3ObjectClient, AwsS3ObjectClient>();
+builder.Services.AddSingleton<S3BackupStorage>();
+builder.Services.AddSingleton<IBackupStorage>(services =>
+    services.GetRequiredService<IOptions<BackupOptions>>().Value.StorageType switch
+    {
+        BackupStorageType.S3 => services.GetRequiredService<S3BackupStorage>(),
+        _ => services.GetRequiredService<LocalBackupStorage>()
+    });
 builder.Services.AddSingleton<IProcessRunner, SystemProcessRunner>();
 builder.Services.AddScoped<IBackupManager, PostgreSqlBackupManager>();
 builder.Services.AddScoped<IBackupManager, MySqlBackupManager>();

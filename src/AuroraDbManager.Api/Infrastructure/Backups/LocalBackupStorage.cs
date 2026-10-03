@@ -93,15 +93,6 @@ public sealed partial class LocalBackupStorage(IOptions<BackupOptions> options, 
             return new Staging(this, stagingPath, finalPath);
         });
 
-    public Task DeleteAsync(BackupLocation location, CancellationToken cancellationToken) =>
-        StorageAsync(() =>
-        {
-            var finalPath = PathFor(location);
-            File.Delete(finalPath + StagingSuffix);
-            File.Delete(finalPath);
-            return true;
-        });
-
     /// <summary>Creates the root and every directory between it and <paramref name="path"/> that does not exist yet.</summary>
     private void CreateDirectory(string path)
     {

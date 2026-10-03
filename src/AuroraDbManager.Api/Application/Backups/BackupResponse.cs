@@ -6,12 +6,13 @@ namespace AuroraDbManager.Api.Application.Backups;
 /// <param name="Id">Unique identifier of the backup.</param>
 /// <param name="DatabaseId">The database that was backed up.</param>
 /// <param name="Status">State of the backup: <c>pending</c>, <c>running</c>, <c>completed</c> or <c>failed</c>.</param>
-/// <param name="StorageType">Where the backup is kept: <c>local</c>.</param>
+/// <param name="StorageType">Where the backup is kept: <c>local</c> or <c>s3</c>.</param>
 /// <param name="SizeBytes">Size of the finished backup in bytes; null until it is <c>completed</c>.</param>
 /// <param name="CreatedAt">UTC time the backup was requested.</param>
 /// <param name="CompletedAt">UTC time the backup reached <c>completed</c> or <c>failed</c>; null until then.</param>
 /// <param name="Error">Why the backup is <c>failed</c>; null in every other status.</param>
-// The artifact's path is deliberately absent: it is a path on the server and of no use to a client.
+// Where exactly the artifact is (a path on the server, or a bucket and key) is deliberately
+// absent: it is the server's configuration and of no use to a client.
 public sealed record BackupResponse(
     Guid Id,
     Guid DatabaseId,

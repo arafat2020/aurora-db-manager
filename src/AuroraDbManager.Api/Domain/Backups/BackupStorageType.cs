@@ -4,5 +4,8 @@ namespace AuroraDbManager.Api.Domain.Backups;
 public enum BackupStorageType
 {
     /// <summary>A file on the filesystem of the machine running the API.</summary>
-    Local
+    Local,
+
+    /// <summary>An object in a bucket of an S3-compatible object store.</summary>
+    S3
 }

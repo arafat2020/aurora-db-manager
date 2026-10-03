@@ -91,7 +91,6 @@ public sealed class LocalBackupStorageTests : IDisposable
         Assert.Throws<ArgumentException>(() => _storage.PathFor(location));
         await Assert.ThrowsAsync<ArgumentException>(() => _storage.BeginAsync(location, default));
         await Assert.ThrowsAsync<ArgumentException>(() => _storage.FindAsync(location, default));
-        await Assert.ThrowsAsync<ArgumentException>(() => _storage.DeleteAsync(location, default));
 
         Assert.False(Directory.Exists(_root));
     }
@@ -244,7 +243,7 @@ public sealed class LocalBackupStorageTests : IDisposable
         Assert.NotNull(exception.InnerException);
     }
 
-    // --- Finding and deleting -----------------------------------------------------------------
+    // --- Finding ------------------------------------------------------------------------------
 
     [Fact]
     public async Task Find_ReturnsOnlyTheArtifactOfThatBackup()
@@ -254,19 +253,5 @@ public sealed class LocalBackupStorageTests : IDisposable
 
         Assert.Equal(5, (await _storage.FindAsync(_location, default))!.SizeBytes);
         Assert.Null(await _storage.FindAsync(other, default));
-    }
-
-    [Fact]
-    public async Task Delete_RemovesTheArtifactAndUnfinishedWork_AndSucceedsWhenThereIsNothing()
-    {
-        var other = _location with { BackupId = Guid.NewGuid() };
-        await WriteAsync(_location, "finished");
-        await WriteAsync(other, "another backup");
-        await File.WriteAllTextAsync(_storage.PathFor(_location) + ".partial", "unfinished");
-
-        await _storage.DeleteAsync(_location, default);
-        await _storage.DeleteAsync(_location, default);
-
-        Assert.Equal([_storage.PathFor(other)], AllFiles());
     }
 }

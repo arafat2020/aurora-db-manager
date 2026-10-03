@@ -9,8 +9,12 @@
 # `AURORA_DOCKER_TESTS=1 dotnet test` works too; on Docker Desktop (macOS, Windows) container
 # networks are not reachable from the host, and this script is the way to run them.
 #
+# The S3 backup tests start their own LocalStack container (S3 only, no published port) on the
+# test network; its image, localstack/localstack:4.4.0 unless AURORA_LOCALSTACK_IMAGE says
+# otherwise, is pulled on first use. No AWS account or credentials are involved.
+#
 # Usage: tests/run-docker-integration-tests.sh [extra `dotnet test` arguments]
-#   e.g. tests/run-docker-integration-tests.sh --filter "FullyQualifiedName~BackupIntegration"
+#   e.g. tests/run-docker-integration-tests.sh --filter "FullyQualifiedName~S3BackupIntegration"
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -33,6 +37,7 @@ exec docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v aurora-db-manager-test-nuget:/root/.nuget/packages \
   -e AURORA_DOCKER_TESTS=1 \
+  -e AURORA_LOCALSTACK_IMAGE="${AURORA_LOCALSTACK_IMAGE:-}" \
   "$image" \
   sh -c '
     set -eu

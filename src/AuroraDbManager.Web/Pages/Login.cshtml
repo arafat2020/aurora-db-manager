@@ -1,0 +1,30 @@
+@page "/login"
+@model LoginModel
+@{
+    Layout = "_BareLayout";
+    ViewData["Title"] = "Sign in";
+}
+<div class="card">
+    <div class="card-body">
+        <h1 class="visually-hidden">Sign in</h1>
+
+        @if (Model.Failed)
+        {
+            <partial name="_Alert" model="@(new Alert(StatusTone.Danger, "Invalid username or password."))" />
+        }
+
+        <form method="post" class="form" asp-route-returnUrl="@Model.ReturnUrl">
+            <div class="field">
+                <label class="field-label" asp-for="Input.Username">Username</label>
+                <input class="input" asp-for="Input.Username" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required />
+                <span class="field-error" asp-validation-for="Input.Username"></span>
+            </div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.Password">Password</label>
+                <input class="input" asp-for="Input.Password" type="password" autocomplete="current-password" required />
+                <span class="field-error" asp-validation-for="Input.Password"></span>
+            </div>
+            <button type="submit" class="button button-primary button-block" data-busy-label="Signing in…">Sign in</button>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,32 @@
+@page "/users"
+@model AuroraDbManager.Web.Pages.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Users", "Who may sign in to this installation, and what each of them may do."))" />
+
+<div class="table-wrap">
+    <table class="table">
+        <caption>Users, newest first</caption>
+        <thead>
+            <tr>
+                <th scope="col">Username</th>
+                <th scope="col">Role</th>
+                <th scope="col">Status</th>
+                <th scope="col">Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in Model.Users.Items)
+            {
+                <tr>
+                    <td class="cell-primary">@user.Username</td>
+                    <td>@AuroraDbManager.Api.Application.Auth.AuroraPolicies.RoleName(user.Role)</td>
+                    <td><partial name="_StatusBadge" model="@StatusBadge.ForEnabled(user.Enabled)" /></td>
+                    <td><partial name="_Time" model="@((DateTime?)user.CreatedAt)" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<p class="table-note">Showing @Model.Users.Items.Count of @Model.Users.TotalCount. Creating and changing users from here arrives with user administration; until then, use the <code>/api/v1/users</code> API.</p>

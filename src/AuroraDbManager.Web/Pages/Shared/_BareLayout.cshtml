@@ -1,0 +1,19 @@
+@inject Microsoft.Extensions.Options.IOptions<WebOptions> Web
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <partial name="_Head" />
+</head>
+<body>
+    <main class="bare" id="main">
+        <div class="bare-panel">
+            <div class="brand bare-brand">
+                <partial name="_Icon" model="@("brand")" />
+                <span>@Web.Value.ApplicationName</span>
+            </div>
+            @RenderBody()
+        </div>
+    </main>
+    <script src="~/js/aurora.js" asp-append-version="true" defer></script>
+</body>
+</html>

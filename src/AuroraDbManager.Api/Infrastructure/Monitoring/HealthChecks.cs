@@ -57,6 +57,9 @@ public static class HealthEndpoints
         return services;
     }
 
+    /// <summary>Whether a check is one of those readiness is made of.</summary>
+    public static bool IsReadinessCheck(HealthCheckRegistration check) => check.Tags.Contains(ReadyTag);
+
     public static void MapAuroraHealthChecks(this IEndpointRouteBuilder endpoints)
     {
         // The two probes are public: whatever runs Aurora has to be able to ask them without a

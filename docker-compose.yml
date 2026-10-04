@@ -1,0 +1,109 @@
+# Aurora DB Manager, complete, on one machine:
+#
+#   cp .env.example .env      # then set the two secrets in it
+#   docker compose up -d --build
+#   open http://localhost:8080
+#
+# See docs/docker-compose.md.
+
+name: aurora
+
+services:
+  # Aurora's own metadata database. Not one of the databases Aurora manages.
+  system-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aurora_db_manager
+      POSTGRES_USER: aurora
+      POSTGRES_PASSWORD: ${AURORA_SYSTEM_DB_PASSWORD:?Set AURORA_SYSTEM_DB_PASSWORD in .env}
+    volumes:
+      - system-db-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurora -d aurora_db_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Brings the metadata database's schema up to date, then exits. Runs on every `up`; it does
+  # nothing when there is nothing to apply.
+  migrate:
+    build: .
+    image: aurora-db-manager:local
+    entrypoint: ["efbundle"]
+    working_dir: /app
+    environment:
+      ConnectionStrings__SystemDatabase: "Host=system-db;Port=5432;Database=aurora_db_manager;Username=aurora;Password=${AURORA_SYSTEM_DB_PASSWORD}"
+    depends_on:
+      system-db:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: "no"
+
+  # The application: UI, REST API, job worker and backup scheduler in one process.
+  aurora:
+    build: .
+    image: aurora-db-manager:local
+    restart: unless-stopped
+    depends_on:
+      system-db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      # On this machine only by default. To serve other machines, put a TLS-terminating reverse
+      # proxy in front (docs/security.md) rather than changing this to 0.0.0.0.
+      - "${AURORA_BIND:-127.0.0.1}:${AURORA_PORT:-8080}:8080"
+    environment:
+      ConnectionStrings__SystemDatabase: "Host=system-db;Port=5432;Database=aurora_db_manager;Username=aurora;Password=${AURORA_SYSTEM_DB_PASSWORD}"
+      Authentication__Jwt__SigningKey: ${AURORA_JWT_SIGNING_KEY:?Set AURORA_JWT_SIGNING_KEY in .env}
+      # Only used while no administrator exists; remove both from .env after the first start.
+      Authentication__BootstrapAdmin__Username: ${AURORA_ADMIN_USERNAME:-}
+      Authentication__BootstrapAdmin__Password: ${AURORA_ADMIN_PASSWORD:-}
+      # Plain HTTP on localhost out of the box. Behind a reverse proxy that terminates TLS, set
+      # AURORA_HTTPS=true and add the proxy's address here, as the container sees it:
+      #   Security__TrustedProxies__0: "172.18.0.0/16"
+      Security__HttpsRedirection: ${AURORA_HTTPS:-false}
+      # The network instance containers are put on. Aurora is on it too (below), which is how
+      # it reaches their databases. Not "aurora-db", the default of an Aurora run directly on the
+      # host, so the two never claim the same network.
+      Docker__NetworkName: aurora-instances
+      Backups__StorageType: ${AURORA_BACKUP_STORAGE:-local}
+      Backups__S3__Bucket: ${AURORA_S3_BUCKET:-}
+      Backups__S3__Region: ${AURORA_S3_REGION:-}
+      Backups__S3__Endpoint: ${AURORA_S3_ENDPOINT:-}
+      Backups__S3__AccessKey: ${AURORA_S3_ACCESS_KEY:-}
+      Backups__S3__SecretKey: ${AURORA_S3_SECRET_KEY:-}
+      Backups__S3__PathStyle: ${AURORA_S3_PATH_STYLE:-false}
+    volumes:
+      # The Docker daemon: Aurora creates and manages the instance containers through it.
+      # This is root-equivalent access to the host; see docs/security.md.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - backups:/var/lib/aurora/backups
+      # Data Protection keys. Losing them makes every instance's stored password unreadable.
+      - keys:/root/.aspnet/DataProtection-Keys
+    networks:
+      - internal
+      - instances
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  # Aurora and its metadata database.
+  internal:
+  # Aurora and the database instances it manages. The name is fixed: it is the network Aurora
+  # creates instance containers on (Docker__NetworkName).
+  instances:
+    name: aurora-instances
+
+volumes:
+  system-db-data:
+  backups:
+  keys:

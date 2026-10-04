@@ -66,6 +66,12 @@ public static class SecurityHardening
             limiter.OnRejected = RejectAsync;
             limiter.AddPolicy(LoginRateLimitPolicy, context =>
             {
+                // Attempts are what is limited: looking at a sign-in form is not one.
+                if (!HttpMethods.IsPost(context.Request.Method))
+                {
+                    return RateLimitPartition.GetNoLimiter("not-an-attempt");
+                }
+
                 var limit = context.RequestServices.GetRequiredService<IOptions<SecurityOptions>>().Value.LoginRateLimit;
                 return RateLimitPartition.GetFixedWindowLimiter(ClientKey(context.Connection.RemoteIpAddress), _ => new FixedWindowRateLimiterOptions
                 {
@@ -93,16 +99,21 @@ public static class SecurityHardening
         }
     }
 
+    /// <summary>The policy of every API response: it is data, loads nothing, and may be framed by nothing.</summary>
+    public const string ApiContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+
     /// <summary>Puts the same few headers on every response, errors included.</summary>
-    public static void UseAuroraSecurityHeaders(this WebApplication app) => app.Use((context, next) =>
+    /// <param name="app">The host.</param>
+    /// <param name="contentSecurityPolicy">Chooses the policy for a response; null for <see cref="ApiContentSecurityPolicy"/> throughout.</param>
+    public static void UseAuroraSecurityHeaders(this WebApplication app, Func<HttpContext, string>? contentSecurityPolicy = null) => app.Use((context, next) =>
     {
         context.Response.OnStarting(() =>
         {
             var headers = context.Response.Headers;
             // A response is what its content type says, and is never guessed to be something that runs.
             headers.XContentTypeOptions = "nosniff";
-            // Nothing this API returns is a page: it loads nothing, and nothing may frame it.
-            headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+            // What a response may load, and that nothing may frame it. For the API: nothing at all.
+            headers.ContentSecurityPolicy = contentSecurityPolicy?.Invoke(context) ?? ApiContentSecurityPolicy;
             headers.XFrameOptions = "DENY";
             headers.Append("Referrer-Policy", "no-referrer");
             // Responses describe the infrastructure and are for the caller who was authorized, not for a cache.
@@ -195,6 +206,10 @@ public static class SecurityHardening
         http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SecurityHardening).FullName!)
             .LogWarning("Login rate limit exceeded for client {ClientAddress}", ClientKey(http.Connection.RemoteIpAddress));
 
-        await ErrorHandling.WriteStatusCodeBodyAsync(http);
+        // The API answers in JSON here and now. A page has no body yet: the host's error pages give it one.
+        if (http.GetEndpoint()?.Metadata.GetMetadata<Microsoft.AspNetCore.Mvc.RazorPages.PageActionDescriptor>() is null)
+        {
+            await ErrorHandling.WriteStatusCodeBodyAsync(http);
+        }
     }
 }

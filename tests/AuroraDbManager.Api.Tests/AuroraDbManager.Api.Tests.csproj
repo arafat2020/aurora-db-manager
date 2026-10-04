@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AuroraDbManager.Api\AuroraDbManager.Api.csproj" />
+    <ProjectReference Include="..\..\src\AuroraDbManager.Web\AuroraDbManager.Web.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,11 @@
+@model Alert
+<div class="alert alert-@Model.ToneName" role="@Model.Role">
+    <partial name="_Icon" model="@Model.ToneName" />
+    <div>
+        @if (Model.Title is not null)
+        {
+            <div class="alert-title">@Model.Title</div>
+        }
+        <div>@Model.Message</div>
+    </div>
+</div>

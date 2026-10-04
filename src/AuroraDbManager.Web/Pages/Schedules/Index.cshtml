@@ -1,0 +1,7 @@
+@page "/schedules"
+@{
+    ViewData["Title"] = "Schedules";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Schedules", "When each database is backed up by itself."))" />
+
+<partial name="_EmptyState" model="@(new EmptyState("Schedules arrive in a later release", "This section is not built yet. Everything it will do is available today through the REST API, under /api/v1/databases/{id}/backup-schedule.", "schedules"))" />

@@ -1,0 +1,7 @@
+@page "/monitoring"
+@{
+    ViewData["Title"] = "Monitoring";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Monitoring", "Health, activity and failures across the installation."))" />
+
+<partial name="_EmptyState" model="@(new EmptyState("Monitoring arrives in a later release", "The overview shows the current summary. The full picture is available today through the REST API, under /api/v1/monitoring/summary and /health/ready.", "monitoring", new PageAction("Open the overview", "/")))" />

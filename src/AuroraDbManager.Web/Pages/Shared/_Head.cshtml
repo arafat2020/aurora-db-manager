@@ -1,0 +1,12 @@
+@inject Microsoft.Extensions.Options.IOptions<WebOptions> Web
+@{
+    var title = ViewData["Title"] as string;
+    var application = Web.Value.ApplicationName;
+}
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="robots" content="noindex, nofollow" />
+<title>@(string.IsNullOrEmpty(title) ? application : $"{title} · {application}")</title>
+<link rel="icon" href="~/favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="~/css/aurora.css" asp-append-version="true" />

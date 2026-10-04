@@ -1,0 +1,49 @@
+@page "/jobs"
+@model AuroraDbManager.Web.Pages.Jobs.IndexModel
+@{
+    ViewData["Title"] = "Jobs";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Jobs", "Everything this installation did in the background: provisioning, databases, backups and restores."))" />
+
+@if (Model.Jobs.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("No jobs yet", "A job appears here whenever an instance is provisioned, a database is created or deleted, or a backup is made or restored.", "jobs"))" />
+}
+else
+{
+    <div class="table-wrap">
+        <table class="table">
+            <caption>Jobs, newest first</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Operation</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Attempt</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Finished</th>
+                    <th scope="col">Job</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in Model.Jobs.Items)
+                {
+                    <tr>
+                        <td class="cell-primary">@Labels.For(job.Type)</td>
+                        <td>
+                            <partial name="_StatusBadge" model="@StatusBadge.For(job.Status)" />
+                            @if (job.Error is not null)
+                            {
+                                <code>@job.Error.Code</code>
+                            }
+                        </td>
+                        <td>@job.Attempt of @job.MaxAttempts</td>
+                        <td><partial name="_Time" model="@((DateTime?)job.CreatedAt)" /></td>
+                        <td><partial name="_Time" model="@job.CompletedAt" /></td>
+                        <td class="mono">@job.Id</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="table-note">Showing the @Model.Jobs.Items.Count most recent of @Model.Jobs.TotalCount.</p>
+}

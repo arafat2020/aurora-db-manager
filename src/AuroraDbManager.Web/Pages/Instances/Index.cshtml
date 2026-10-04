@@ -1,0 +1,49 @@
+@page "/instances"
+@model AuroraDbManager.Web.Pages.Instances.IndexModel
+@{
+    ViewData["Title"] = "Instances";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Instances", "The PostgreSQL and MySQL servers this installation runs."))" />
+
+@if (Model.Instances.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("No instances yet", User.IsAdmin()
+        ? "An instance is a database server in a container of its own. Creating one from here arrives with instance management; until then, use POST /api/v1/instances."
+        : "An instance is a database server in a container of its own. An administrator creates them.", "instances"))" />
+}
+else
+{
+    <div class="table-wrap">
+        <table class="table">
+            <caption>Instances, newest first</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Engine</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Resources</th>
+                    <th scope="col">Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var instance in Model.Instances.Items)
+                {
+                    <tr>
+                        <td class="cell-primary">@instance.Name</td>
+                        <td>@Labels.For(instance.Engine) @instance.Version</td>
+                        <td>
+                            <partial name="_StatusBadge" model="@StatusBadge.For(instance.Status)" />
+                            @if (instance.Error is not null)
+                            {
+                                <code>@instance.Error.Code</code>
+                            }
+                        </td>
+                        <td>@instance.Cpu CPU · @instance.MemoryMb MB · @instance.StorageGb GB</td>
+                        <td><partial name="_Time" model="@((DateTime?)instance.CreatedAt)" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="table-note">Showing @Model.Instances.Items.Count of @Model.Instances.TotalCount.</p>
+}

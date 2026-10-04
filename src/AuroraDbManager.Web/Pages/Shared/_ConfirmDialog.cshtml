@@ -1,0 +1,12 @@
+@* One dialog for every form that asks before it acts: <form data-confirm="..." data-confirm-action="Delete">.
+   Without script the form is simply submitted, and the server decides as it always does. *@
+<dialog class="dialog" data-confirm-dialog aria-labelledby="confirm-title">
+    <div class="dialog-body">
+        <h2 id="confirm-title">Are you sure?</h2>
+        <p class="muted" data-confirm-message></p>
+    </div>
+    <div class="dialog-actions">
+        <button type="button" class="button" data-confirm-cancel>Cancel</button>
+        <button type="button" class="button button-danger" data-confirm-accept>Confirm</button>
+    </div>
+</dialog>

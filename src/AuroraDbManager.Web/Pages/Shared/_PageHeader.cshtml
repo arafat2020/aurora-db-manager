@@ -1,0 +1,17 @@
+@model PageHeader
+<header class="page-header">
+    <div>
+        <h1>@Model.Title</h1>
+        @if (Model.Description is not null)
+        {
+            <p class="page-description">@Model.Description</p>
+        }
+    </div>
+    @if (Model.Action is not null)
+    {
+        <a class="button button-primary" href="@Url.Content("~" + Model.Action.Path)">
+            <partial name="_Icon" model="@("plus")" />
+            @Model.Action.Label
+        </a>
+    }
+</header>

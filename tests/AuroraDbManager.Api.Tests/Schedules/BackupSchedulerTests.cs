@@ -664,8 +664,9 @@ public sealed class BackupSchedulerTests : IDisposable
     [Fact]
     public void Worker_IsPartOfTheRealApplication_AlongsideTheJobWorker()
     {
-        // The test host removes it so tests decide when a pass happens; Program registers it.
-        var program = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "AuroraDbManager.Api", "Program.cs"));
+        // The test host removes it so tests decide when a pass happens; every real host registers it,
+        // with the rest of what a host is made of.
+        var program = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "AuroraDbManager.Api", "AuroraHost.cs"));
 
         Assert.Contains("AddHostedService<ScheduledBackupWorker>()", program);
         Assert.Contains("AddHostedService<JobWorker>()", program);

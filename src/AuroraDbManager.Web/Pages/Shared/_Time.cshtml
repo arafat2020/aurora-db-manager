@@ -1,0 +1,11 @@
+@model DateTime?
+@* An instant, always in UTC and always saying so. *@
+@if (Model is { } instant)
+{
+    var utc = DateTime.SpecifyKind(instant, DateTimeKind.Utc);
+    <time datetime="@utc.ToString("yyyy-MM-ddTHH:mm:ssZ")">@utc.ToString("yyyy-MM-dd HH:mm") UTC</time>
+}
+else
+{
+    <span class="muted">—</span>
+}

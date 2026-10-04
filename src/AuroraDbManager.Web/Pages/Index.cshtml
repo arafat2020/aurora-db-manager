@@ -1,0 +1,127 @@
+@page "/"
+@model IndexModel
+@{
+    ViewData["Title"] = "Overview";
+    var summary = Model.Dashboard.Summary;
+}
+<partial name="_PageHeader" model="@(new PageHeader("Overview", "The state of this installation at a glance."))" />
+
+<section class="section" aria-labelledby="status-title">
+    <div class="section-header">
+        <h2 id="status-title">System status</h2>
+        <span class="section-note">As of <partial name="_Time" model="@((DateTime?)summary.GeneratedAt)" /></span>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Aurora</dt>
+                <dd><partial name="_StatusBadge" model="@StatusBadge.For(Model.Dashboard.Readiness)" /></dd>
+                @foreach (var (check, status) in Model.Dashboard.Dependencies)
+                {
+                    <dt>@Dashboard.DependencyLabel(check)</dt>
+                    <dd><partial name="_StatusBadge" model="@StatusBadge.For(status)" /></dd>
+                }
+                <dt>Operations</dt>
+                <dd>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(summary.Status)" />
+                    @if (summary.Status != Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy)
+                    {
+                        <span class="muted">@Model.OperationsNote</span>
+                    }
+                </dd>
+                <dt>Backup scheduler</dt>
+                <dd>
+                    @summary.Scheduler.EnabledSchedules enabled schedule@(summary.Scheduler.EnabledSchedules == 1 ? "" : "s")
+                    @if (summary.Scheduler.OverdueSchedules > 0)
+                    {
+                        <partial name="_StatusBadge" model="@(new StatusBadge($"{summary.Scheduler.OverdueSchedules} overdue", StatusTone.Warning))" />
+                    }
+                    @if (summary.Scheduler.NextRunAt is not null)
+                    {
+                        <span class="muted">· next run <partial name="_Time" model="@summary.Scheduler.NextRunAt" /></span>
+                    }
+                </dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="summary-title">
+    <div class="section-header">
+        <h2 id="summary-title">Summary</h2>
+    </div>
+    <div class="stat-grid">
+        <a class="card stat" href="~/instances">
+            <div class="stat-label"><partial name="_Icon" model="@("instances")" />Instances</div>
+            <div class="stat-value">@summary.Instances.Total</div>
+            <div class="stat-detail">@summary.Instances.Running running · @summary.Instances.Failed failed</div>
+        </a>
+        <a class="card stat" href="~/jobs">
+            <div class="stat-label"><partial name="_Icon" model="@("jobs")" />Running jobs</div>
+            <div class="stat-value">@summary.Jobs.Running</div>
+            <div class="stat-detail">@summary.Jobs.Pending pending</div>
+        </a>
+        <a class="card stat" href="~/backups">
+            <div class="stat-label"><partial name="_Icon" model="@("backups")" />Backups in progress</div>
+            <div class="stat-value">@(summary.Backups.Running + summary.Backups.Pending)</div>
+            <div class="stat-detail">@summary.Backups.FailedRecently failed in the last @summary.RecentWindowHours hours</div>
+        </a>
+        <a class="card stat" href="~/jobs">
+            <div class="stat-label"><partial name="_Icon" model="@("warning")" />Recent failures</div>
+            <div class="stat-value">@summary.Jobs.FailedRecently</div>
+            <div class="stat-detail">in the last @summary.RecentWindowHours hours</div>
+        </a>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="failures-title">
+    <div class="section-header">
+        <h2 id="failures-title">Recent failures</h2>
+        <span class="section-note">Last @summary.RecentWindowHours hours, newest first</span>
+    </div>
+    @if (summary.RecentFailures.Count == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No recent failures", $"No job has failed in the last {summary.RecentWindowHours} hours.", "success"))" />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <caption>Jobs that failed recently</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Operation</th>
+                        <th scope="col">Error</th>
+                        <th scope="col">Failed</th>
+                        <th scope="col">Job</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var failure in summary.RecentFailures)
+                    {
+                        <tr>
+                            <td class="cell-primary">@Labels.For(failure.Type)</td>
+                            <td><code>@failure.ErrorCode</code></td>
+                            <td><partial name="_Time" model="@((DateTime?)failure.FailedAt)" /></td>
+                            <td class="mono">@failure.JobId</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="section" aria-labelledby="sections-title">
+    <div class="section-header">
+        <h2 id="sections-title">Go to</h2>
+    </div>
+    <ul class="link-list">
+        @foreach (var item in NavigationMenu.For(User).SelectMany(group => group.Items).Where(item => item.Path != "/"))
+        {
+            <li>
+                <a class="button" href="@Url.Content("~" + item.Path)"><partial name="_Icon" model="@item.Icon" />@item.Label</a>
+            </li>
+        }
+    </ul>
+</section>

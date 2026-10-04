@@ -1,0 +1,86 @@
+@inject Microsoft.Extensions.Options.IOptions<WebOptions> Web
+@{
+    var currentPath = Context.Request.Path.Value ?? "/";
+    // An error page shown in place of another keeps the address that was asked for.
+    if (Context.Features.Get<Microsoft.AspNetCore.Diagnostics.IStatusCodeReExecuteFeature>() is { } reExecuted)
+    {
+        currentPath = reExecuted.OriginalPath;
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <partial name="_Head" />
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="topbar">
+        <button type="button" class="button button-quiet nav-toggle" data-nav-toggle aria-controls="sections" aria-expanded="false">
+            <partial name="_Icon" model="@("menu")" />
+            <span class="visually-hidden">Sections</span>
+        </button>
+
+        <a class="brand" href="~/">
+            <partial name="_Icon" model="@("brand")" />
+            <span>@Web.Value.ApplicationName</span>
+        </a>
+
+        <span class="topbar-spacer"></span>
+
+        <details class="user-menu" data-menu>
+            <summary aria-label="Account: @User.Name(), @User.RoleName()">
+                <partial name="_Icon" model="@("user")" />
+                <span class="user-name">@User.Name()</span>
+                <span class="user-role">@User.RoleName()</span>
+            </summary>
+            <div class="user-menu-panel">
+                <div class="user-menu-meta">
+                    Signed in as <strong>@User.Name()</strong><br />
+                    Role: @User.RoleName()
+                </div>
+                <form method="post" asp-page="/Logout">
+                    <button type="submit" class="button button-block">
+                        <partial name="_Icon" model="@("signout")" />
+                        Sign out
+                    </button>
+                </form>
+            </div>
+        </details>
+    </header>
+
+    <div class="shell">
+        <nav class="sidebar" id="sections" aria-label="Sections">
+            @foreach (var group in NavigationMenu.For(User))
+            {
+                <div class="nav-group">
+                    @if (group.Title is not null)
+                    {
+                        <div class="nav-group-title">@group.Title</div>
+                    }
+                    <ul class="nav-list">
+                        @foreach (var item in group.Items)
+                        {
+                            <li>
+                                <a class="nav-link" href="@Url.Content("~" + item.Path)" aria-current="@(item.IsCurrent(currentPath) ? "page" : null)">
+                                    <partial name="_Icon" model="@item.Icon" />
+                                    @item.Label
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </nav>
+
+        <main class="content" id="main">
+            <div class="content-inner">
+                @RenderBody()
+            </div>
+        </main>
+    </div>
+
+    <partial name="_ConfirmDialog" />
+    <script src="~/js/aurora.js" asp-append-version="true" defer></script>
+</body>
+</html>

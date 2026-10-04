@@ -1,0 +1,14 @@
+# Only the sources are needed to build the image.
+**/bin/
+**/obj/
+.git/
+.env
+.env.*
+!.env.example
+docs/
+tests/
+**/.aurora/
+**/*.user
+.vs/
+.idea/
+.vscode/

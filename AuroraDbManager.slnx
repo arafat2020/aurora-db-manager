@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/AuroraDbManager.Api/AuroraDbManager.Api.csproj" />
+    <Project Path="src/AuroraDbManager.Web/AuroraDbManager.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AuroraDbManager.Api.Tests/AuroraDbManager.Api.Tests.csproj" />

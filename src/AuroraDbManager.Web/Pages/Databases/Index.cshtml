@@ -1,0 +1,7 @@
+@page "/databases"
+@{
+    ViewData["Title"] = "Databases";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Databases", "The databases inside your instances."))" />
+
+<partial name="_EmptyState" model="@(new EmptyState("Databases arrive in a later release", "This section is not built yet. Everything it will do is available today through the REST API, under /api/v1/instances/{id}/databases.", "databases"))" />

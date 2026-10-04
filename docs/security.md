@@ -4,8 +4,8 @@ How Aurora is meant to be deployed and what it does to protect itself. Signing i
 users are in [authentication.md](authentication.md); what is logged and measured is in
 [monitoring.md](monitoring.md).
 
-Aurora is a management API for one self-hosted installation. It serves JSON to signed-in
-operators and their tools; it serves no pages and nothing to browsers of other sites.
+Aurora is a management service for one self-hosted installation: a REST API for tools, and a
+server-rendered UI for operators ([ui.md](ui.md)). It serves nothing to browsers of other sites.
 
 ## Trust boundaries
 
@@ -155,6 +155,9 @@ Every response, errors included, carries:
 
 Aurora does not send `Server` or `X-Powered-By`.
 
+The policy above is the API's. Pages of the UI get one that allows this host's own styles and
+scripts and nothing else, still without `unsafe-inline` or `unsafe-eval`; see [ui.md](ui.md).
+
 ## CORS
 
 **CORS is not enabled, intentionally.** Aurora has no browser front end on another origin, so no
@@ -162,8 +165,9 @@ origin is allowed, no `Access-Control-*` header is ever sent, and preflight requ
 browser on another site cannot read Aurora's responses. If a browser UI on another origin is
 ever added, allow exactly that origin; never `*`.
 
-Tokens are sent in the `Authorization` header and never in a cookie, so there is no ambient
-credential for a cross-site request to ride on.
+API tokens are sent in the `Authorization` header and never in a cookie, and the API does not
+accept the UI's session cookie, so the API has no ambient credential for a cross-site request to
+ride on. The UI's own forms are protected by antiforgery tokens.
 
 ## Request limits
 
@@ -277,7 +281,7 @@ is nothing to hide between them.
 
 ## OpenAPI
 
-The OpenAPI document (`/openapi/v1.json`) is served **in the development environment only**. In
+The UI's style guide (`/styleguide`) and the OpenAPI document (`/openapi/v1.json`) are served **in the development environment only**. In
 production the route does not exist. The document describes bearer authentication and marks every
 operation except login as requiring it; it contains no secrets. There is no Swagger UI.
 

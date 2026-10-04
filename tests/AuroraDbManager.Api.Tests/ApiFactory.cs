@@ -35,7 +35,17 @@ namespace AuroraDbManager.Api.Tests;
 /// private directory, with the dump programs swapped for <see cref="FakeDumpTools"/>. A file rather than an in-memory database, because the job worker
 /// and the requests use the database concurrently and each needs its own connection.
 /// </summary>
-public sealed class ApiFactory : WebApplicationFactory<Program>
+public sealed class ApiFactory : TestHostFactory<Program>;
+
+/// <summary>
+/// The UI host, <c>AuroraDbManager.Web</c>, in-process with the same replacements as
+/// <see cref="ApiFactory"/>: the Razor Pages UI, and the REST API it serves alongside.
+/// </summary>
+public sealed class WebFactory : TestHostFactory<AuroraDbManager.Web.WebProgram>;
+
+/// <summary>What <see cref="ApiFactory"/> and <see cref="WebFactory"/> have in common: everything but the host.</summary>
+public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
+    where TProgram : class
 {
     private static readonly EphemeralDataProtectionProvider DataProtection = new();
 

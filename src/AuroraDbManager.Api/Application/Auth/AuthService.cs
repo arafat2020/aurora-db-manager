@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AuroraDbManager.Api.Application.Auth;
 
-/// <summary>Signs users in: checks a username and password and, if they are right, issues an access token.</summary>
+/// <summary>Signs users in: checks a username and password, and for the API issues an access token.</summary>
 public sealed class AuthService(
     AppDbContext db,
     PasswordHashing passwords,
@@ -13,26 +13,44 @@ public sealed class AuthService(
     TimeProvider timeProvider,
     ILogger<AuthService> logger)
 {
+    /// <summary>Signs a user in for the API: checks the credentials and issues an access token.</summary>
+    /// <returns>The token, or null if the user cannot be signed in; see <see cref="AuthenticateAsync"/>.</returns>
+    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
+    {
+        var user = await AuthenticateAsync(request.Username!, request.Password!, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var token = tokens.Issue(user);
+        return new LoginResponse(token.Value, "Bearer", token.ExpiresAt);
+    }
+
+    /// <summary>
+    /// Checks a username and password. The one place credentials are checked, whichever front
+    /// end asks: the API, which then issues a token, or the UI, which then sets a cookie.
+    /// </summary>
     /// <returns>
-    /// The token, or null if the user cannot be signed in. Why not, an unknown name, a wrong
+    /// The user, or null if they cannot be signed in. Why not, an unknown name, a wrong
     /// password or a disabled account, is deliberately not told apart for the caller: the answer
     /// must not reveal which usernames exist.
     /// </returns>
-    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
+    public async Task<User?> AuthenticateAsync(string username, string password, CancellationToken cancellationToken)
     {
-        var normalized = User.Normalize(request.Username!.Trim());
+        var normalized = User.Normalize(username.Trim());
         var user = await db.Users.FirstOrDefaultAsync(u => u.NormalizedUsername == normalized, cancellationToken);
 
         if (user is null)
         {
             // The same work as for a user who exists, so the time taken says nothing either.
-            passwords.VerifyAgainstNoUser(request.Password!);
+            passwords.VerifyAgainstNoUser(password);
             // The name that was tried is not logged: what gets typed into that field by mistake is, often enough, a password.
             logger.LogWarning("Login failed: {Reason}", "unknown_user");
             return null;
         }
 
-        var verification = passwords.Verify(user.PasswordHash, request.Password!);
+        var verification = passwords.Verify(user.PasswordHash, password);
         if (!verification.Succeeded)
         {
             logger.LogWarning("Login failed for user {UserId}: {Reason}", user.Id, "wrong_password");
@@ -48,13 +66,12 @@ public sealed class AuthService(
 
         if (verification.NeedsRehash)
         {
-            user.ChangePasswordHash(passwords.Hash(request.Password!), timeProvider.GetUtcNow().UtcDateTime);
+            user.ChangePasswordHash(passwords.Hash(password), timeProvider.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var token = tokens.Issue(user);
         logger.LogInformation("User {UserId} signed in with role {Role}", user.Id, user.Role);
-        return new LoginResponse(token.Value, "Bearer", token.ExpiresAt);
+        return user;
     }
 }
 

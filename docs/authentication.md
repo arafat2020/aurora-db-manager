@@ -1,5 +1,8 @@
 # Authentication and authorization
 
+This document is about users, roles and the REST API's bearer tokens. Signing in to the UI, with
+a cookie instead of a token, is described in [ui.md](ui.md); the users and roles are the same.
+
 Aurora is a single self-hosted installation with user accounts. Every management request is made
 by a signed-in user, and what the user may do follows from one of three roles. There are no
 tenants, organizations or per-resource owners: a role applies to the whole installation.

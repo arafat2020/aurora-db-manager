@@ -37,16 +37,29 @@ public static class ErrorHandling
     /// </summary>
     public static Task WriteExceptionBodyAsync(HttpContext context)
     {
+        if (RefusedStatus(context) is { } status)
+        {
+            context.Response.StatusCode = status;
+        }
+
+        return WriteStatusCodeBodyAsync(context);
+    }
+
+    /// <summary>
+    /// The status of a request that failed because the server refused it while reading it; null
+    /// if the request did not fail that way.
+    /// </summary>
+    public static int? RefusedStatus(HttpContext context)
+    {
         for (var error = context.Features.Get<IExceptionHandlerFeature>()?.Error; error is not null; error = error.InnerException)
         {
             if (error is BadHttpRequestException { StatusCode: >= 400 and < 500 } refused)
             {
-                context.Response.StatusCode = refused.StatusCode;
-                break;
+                return refused.StatusCode;
             }
         }
 
-        return WriteStatusCodeBodyAsync(context);
+        return null;
     }
 
     /// <summary>Gives bodiless error responses (unknown routes, unhandled exceptions) the standard error body.</summary>

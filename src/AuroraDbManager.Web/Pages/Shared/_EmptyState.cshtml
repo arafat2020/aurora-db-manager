@@ -1,0 +1,10 @@
+@model EmptyState
+<div class="state">
+    <partial name="_Icon" model="@Model.Icon" />
+    <h2>@Model.Title</h2>
+    <p class="state-message">@Model.Message</p>
+    @if (Model.Action is not null)
+    {
+        <a class="button button-primary state-action" href="@Url.Content("~" + Model.Action.Path)">@Model.Action.Label</a>
+    }
+</div>

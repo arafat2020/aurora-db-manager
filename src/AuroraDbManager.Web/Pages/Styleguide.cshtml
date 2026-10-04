@@ -1,0 +1,108 @@
+@page "/styleguide"
+@model StyleguideModel
+@{
+    ViewData["Title"] = "Style guide";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Style guide", "Every building block of the UI on one page. Served in the development environment only.", new PageAction("Primary action", "/styleguide")))" />
+
+<section class="section" aria-labelledby="sg-badges">
+    <div class="section-header"><h2 id="sg-badges">Status badges</h2><span class="section-note">A mark, a word and a colour</span></div>
+    <div class="card"><div class="card-body stack">
+        <div class="link-list">
+            @foreach (var badge in Model.Badges)
+            {
+                <partial name="_StatusBadge" model="@badge" />
+            }
+        </div>
+    </div></div>
+</section>
+
+<section class="section" aria-labelledby="sg-buttons">
+    <div class="section-header"><h2 id="sg-buttons">Buttons</h2></div>
+    <div class="card"><div class="card-body">
+        <div class="form-actions">
+            <button type="button" class="button button-primary">Primary</button>
+            <button type="button" class="button">Secondary</button>
+            <button type="button" class="button button-danger">Destructive</button>
+            <button type="button" class="button button-quiet">Quiet</button>
+            <button type="button" class="button" disabled>Disabled</button>
+            <button type="button" class="button button-primary" aria-busy="true" disabled>Working…</button>
+        </div>
+    </div></div>
+</section>
+
+<section class="section" aria-labelledby="sg-alerts">
+    <div class="section-header"><h2 id="sg-alerts">Alerts</h2></div>
+    <partial name="_Alert" model="@(new Alert(StatusTone.Success, "The backup was requested.", "Done"))" />
+    <partial name="_Alert" model="@(new Alert(StatusTone.Progress, "The instance is being provisioned."))" />
+    <partial name="_Alert" model="@(new Alert(StatusTone.Warning, "The database already has a backup in progress.", "BACKUP_OPERATION_IN_PROGRESS"))" />
+    <partial name="_Alert" model="@(new Alert(StatusTone.Danger, "The request could not be completed.", "Something went wrong"))" />
+</section>
+
+<section class="section" aria-labelledby="sg-form">
+    <div class="section-header"><h2 id="sg-form">Forms</h2><span class="section-note">Labels, hints, required marks, errors, disabled and submitted states</span></div>
+    <div class="card"><div class="card-body">
+        <form method="post" class="form" data-confirm="This is what a confirmation looks like. Nothing will be changed." data-confirm-action="Submit">
+            <div asp-validation-summary="ModelOnly" class="field-error" role="alert"></div>
+            <div class="field">
+                <label class="field-label" asp-for="Sample.Name">Name <span class="field-required" aria-hidden="true">*</span></label>
+                <input class="input" asp-for="Sample.Name" aria-describedby="sg-name-hint" required />
+                <span class="field-hint" id="sg-name-hint">Lowercase letters, digits and underscores.</span>
+                <span class="field-error" asp-validation-for="Sample.Name"></span>
+            </div>
+            <div class="field">
+                <label class="field-label" asp-for="Sample.Engine">Engine</label>
+                <select class="select" asp-for="Sample.Engine">
+                    <option value="postgres">PostgreSQL</option>
+                    <option value="mysql">MySQL</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="sg-disabled">Disabled</label>
+                <input class="input" id="sg-disabled" value="Cannot be changed" disabled />
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="button button-primary" data-busy-label="Submitting…">Submit</button>
+                <a class="button" href="~/styleguide">Cancel</a>
+            </div>
+        </form>
+        @if (Model.Submitted)
+        {
+            <partial name="_Alert" model="@(new Alert(StatusTone.Success, $"The server accepted “{Model.Sample.Name}”."))" />
+        }
+    </div></div>
+</section>
+
+<section class="section" aria-labelledby="sg-table">
+    <div class="section-header"><h2 id="sg-table">Tables</h2><span class="section-note">Headers, rows, badges, actions; scrolls sideways when narrow</span></div>
+    <div class="table-wrap">
+        <table class="table">
+            <caption>An example table</caption>
+            <thead>
+                <tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="cell-primary">production-db</td>
+                    <td><partial name="_StatusBadge" model="@(new StatusBadge("Running", StatusTone.Success))" /></td>
+                    <td><partial name="_Time" model="@((DateTime?)new DateTime(2026, 3, 10, 10, 0, 0, DateTimeKind.Utc))" /></td>
+                    <td class="cell-actions"><button type="button" class="button button-quiet">Open</button></td>
+                </tr>
+                <tr>
+                    <td class="cell-primary">staging-db</td>
+                    <td><partial name="_StatusBadge" model="@(new StatusBadge("Failed", StatusTone.Danger))" /> <code>DATABASE_READINESS_TIMEOUT</code></td>
+                    <td><partial name="_Time" model="@((DateTime?)null)" /></td>
+                    <td class="cell-actions"><button type="button" class="button button-quiet">Open</button></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="sg-states">
+    <div class="section-header"><h2 id="sg-states">Empty and loading states</h2></div>
+    <div class="stack">
+        <partial name="_EmptyState" model="@(new EmptyState("Nothing here yet", "What is missing, why, and what to do about it.", "empty", new PageAction("A way forward", "/styleguide")))" />
+        <div class="card"><div class="card-body"><span class="loading" role="status"><span class="spinner" aria-hidden="true"></span>Loading…</span></div></div>
+    </div>
+</section>

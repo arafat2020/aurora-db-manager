@@ -1,11 +1,14 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
 
 [ApiController]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class DatabasesController(DatabaseService databases) : ControllerBase
 {
     private const string InstanceDatabasesRoute = "api/v1/instances/{instanceId:guid}/databases";
@@ -21,6 +24,7 @@ public sealed class DatabasesController(DatabaseService databases) : ControllerB
     /// The name must be unique within the instance, start with a lowercase letter and contain only
     /// lowercase letters, digits and underscores, up to 63 characters.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpPost(InstanceDatabasesRoute)]
     [ProducesResponseType<DatabaseOperationResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -81,6 +85,7 @@ public sealed class DatabasesController(DatabaseService databases) : ControllerB
     /// <c>409 RESTORE_OPERATION_IN_PROGRESS</c>. Deleting a database removes the records of its
     /// backups; the backup files stay in the backup storage.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpDelete(DatabaseRoute)]
     [ProducesResponseType<DatabaseOperationResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]

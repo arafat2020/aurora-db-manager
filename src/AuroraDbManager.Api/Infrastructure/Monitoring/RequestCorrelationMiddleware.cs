@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Monitoring;
 
 namespace AuroraDbManager.Api.Infrastructure.Monitoring;
@@ -38,13 +39,15 @@ public sealed class RequestCorrelationMiddleware(RequestDelegate next, TimeProvi
             // The path only: a query string is not logged. Probes arrive every few seconds and
             // are kept out of the ordinary log.
             var level = context.Request.Path.StartsWithSegments("/health") ? LogLevel.Debug : LogLevel.Information;
+            // Who made the request, by id; "anonymous" when nobody was signed in. Never the token.
             logger.Log(
                 level,
-                "HTTP {Method} {Path} responded {StatusCode} in {DurationMs} ms",
+                "HTTP {Method} {Path} responded {StatusCode} in {DurationMs} ms for user {UserId}",
                 context.Request.Method,
                 context.Request.Path.Value,
                 context.Response.StatusCode,
-                (long)timeProvider.GetElapsedTime(started).TotalMilliseconds);
+                (long)timeProvider.GetElapsedTime(started).TotalMilliseconds,
+                context.User.Identity?.IsAuthenticated == true ? context.User.FindFirst(AuroraPolicies.SubjectClaim)?.Value : "anonymous");
         }
     }
 

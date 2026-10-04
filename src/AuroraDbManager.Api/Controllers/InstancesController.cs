@@ -1,5 +1,7 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
@@ -7,6 +9,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Route("api/v1/instances")]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class InstancesController(InstanceService instances, InstanceHealthService health) : ControllerBase
 {
     /// <summary>Creates an instance and starts provisioning it in the background.</summary>
@@ -16,6 +19,7 @@ public sealed class InstancesController(InstanceService instances, InstanceHealt
     /// the database accepts connections, or <c>failed</c> when the job has used all its attempts. Follow the job with <c>GET /api/v1/jobs/{id}</c>; the
     /// <c>Location</c> header points to the instance.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Admin)]
     [HttpPost]
     [ProducesResponseType<CreateInstanceResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -69,6 +73,7 @@ public sealed class InstancesController(InstanceService instances, InstanceHealt
     /// with its data volume, and the records of their backups are removed; backup files are kept. If the instance's Docker resources cannot be removed, for
     /// example because Docker is unavailable, the request fails with <c>503</c> and nothing is deleted.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Admin)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]

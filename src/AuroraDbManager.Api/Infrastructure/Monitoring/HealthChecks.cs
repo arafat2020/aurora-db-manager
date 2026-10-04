@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups.S3;
@@ -23,7 +24,7 @@ namespace AuroraDbManager.Api.Infrastructure.Monitoring;
 /// database is required: without it the answer is <c>unhealthy</c> and 503. Docker is needed to
 /// provision and to reach instances, but reads, job status and monitoring work without it, so a
 /// Docker that cannot be reached makes the answer <c>degraded</c>, still 200.</item>
-/// <item><c>/health/storage</c>, operational: can the S3 backup storage be used? Never part of
+/// <item><c>/health/storage</c>, operational, for signed-in users: can the S3 backup storage be used? Never part of
 /// readiness: backups may be local, and an S3 outage fails backups, not the API. Not meant for
 /// a probe: each call is a request to the object store.</item>
 /// </list>
@@ -58,9 +59,13 @@ public static class HealthEndpoints
 
     public static void MapAuroraHealthChecks(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapHealthChecks(LivenessPath, Options(_ => false));
-        endpoints.MapHealthChecks(ReadinessPath, Options(check => check.Tags.Contains(ReadyTag)));
-        endpoints.MapHealthChecks(StoragePath, Options(check => check.Tags.Contains(StorageTag)));
+        // The two probes are public: whatever runs Aurora has to be able to ask them without a
+        // user. They return statuses only. The storage check is for operators, and each call is
+        // a request to the object store, so it takes a signed-in user like the rest of monitoring.
+        endpoints.MapHealthChecks(LivenessPath, Options(_ => false)).AllowAnonymous();
+        endpoints.MapHealthChecks(ReadinessPath, Options(check => check.Tags.Contains(ReadyTag))).AllowAnonymous();
+        endpoints.MapHealthChecks(StoragePath, Options(check => check.Tags.Contains(StorageTag)))
+            .RequireAuthorization(AuroraPolicies.Viewer);
     }
 
     private static HealthCheckOptions Options(Func<HealthCheckRegistration, bool> predicate) => new()

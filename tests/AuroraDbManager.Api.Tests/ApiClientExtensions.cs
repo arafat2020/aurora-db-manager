@@ -11,6 +11,29 @@ internal static class ApiClientExtensions
     public const string DatabasesUrl = "/api/v1/databases";
     public const string BackupsUrl = "/api/v1/backups";
     public const string MonitoringSummaryUrl = "/api/v1/monitoring/summary";
+    public const string LoginUrl = "/api/v1/auth/login";
+    public const string UsersUrl = "/api/v1/users";
+
+    /// <summary>Signs in through the login endpoint and returns the response as it is.</summary>
+    public static Task<HttpResponseMessage> LoginAsync(this HttpClient client, string username, string password) =>
+        client.PostAsJsonAsync(LoginUrl, new { username, password });
+
+    /// <summary>Signs in and makes the client send the access token it was given from then on.</summary>
+    public static async Task<string> SignInAsync(this HttpClient client, string username, string password)
+    {
+        var body = await (await client.LoginAsync(username, password)).ReadJsonAsync(HttpStatusCode.OK);
+        var token = body.GetProperty("accessToken").GetString()!;
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return token;
+    }
+
+    /// <summary>Creates a user through the API, as the administrator the client is, and returns its id.</summary>
+    public static async Task<Guid> CreateUserAsync(
+        this HttpClient client, string username, string password, string role, bool? enabled = null)
+    {
+        var response = await client.PostAsJsonAsync(UsersUrl, new { username, password, role, enabled });
+        return (await response.ReadJsonAsync(HttpStatusCode.Created)).GetProperty("id").GetGuid();
+    }
     public const string HealthUrl = "/health";
     public const string ReadinessUrl = "/health/ready";
     public const string StorageHealthUrl = "/health/storage";

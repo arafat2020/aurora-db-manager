@@ -33,6 +33,9 @@ public static class ErrorHandling
     {
         var (code, message) = context.Response.StatusCode switch
         {
+            // Why a token was not accepted is not said: missing, malformed, expired and forged all read the same.
+            StatusCodes.Status401Unauthorized => (ErrorCodes.Unauthorized, "Authentication is required."),
+            StatusCodes.Status403Forbidden => (ErrorCodes.Forbidden, "You are not allowed to do this."),
             StatusCodes.Status404NotFound => (ErrorCodes.NotFound, "The requested resource was not found."),
             StatusCodes.Status405MethodNotAllowed => (ErrorCodes.MethodNotAllowed, "The HTTP method is not allowed for this resource."),
             StatusCodes.Status415UnsupportedMediaType => (ErrorCodes.UnsupportedMediaType, "The request content type is not supported."),

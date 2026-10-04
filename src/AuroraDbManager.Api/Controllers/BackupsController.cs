@@ -1,12 +1,15 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
 
 [ApiController]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class BackupsController(BackupService backups, RestoreService restores) : ControllerBase
 {
     private const string DatabaseBackupsRoute = "api/v1/databases/{databaseId:guid}/backups";
@@ -27,6 +30,7 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
     /// at a time (<c>409 BACKUP_OPERATION_IN_PROGRESS</c>) and is not backed up while it is
     /// being restored (<c>409 RESTORE_OPERATION_IN_PROGRESS</c>).
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpPost(DatabaseBackupsRoute)]
     [ProducesResponseType<CreateBackupResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
@@ -99,6 +103,7 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
     /// (<c>409 RESTORE_OPERATION_IN_PROGRESS</c>) and is not restored while it is being backed up
     /// (<c>409 BACKUP_OPERATION_IN_PROGRESS</c>).
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpPost(RestoreRoute)]
     [ProducesResponseType<RestoreResponse>(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]

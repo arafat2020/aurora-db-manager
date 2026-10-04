@@ -1,5 +1,7 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
@@ -7,6 +9,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Route("api/v1/databases/{databaseId:guid}/backup-schedule")]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class BackupSchedulesController(BackupScheduleService schedules) : ControllerBase
 {
     /// <summary>Gives a database a backup schedule.</summary>
@@ -22,6 +25,7 @@ public sealed class BackupSchedulesController(BackupScheduleService schedules) :
     /// down is made up for by one backup, however many were missed; one that finds the database
     /// busy or unavailable is skipped.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpPost]
     [ProducesResponseType<BackupScheduleResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -51,6 +55,7 @@ public sealed class BackupSchedulesController(BackupScheduleService schedules) :
     /// anew from now. Disabling keeps the schedule and leaves it without a next run; enabling it
     /// again starts it from the next occurrence after that moment.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpPut]
     [ProducesResponseType<BackupScheduleResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -66,6 +71,7 @@ public sealed class BackupSchedulesController(BackupScheduleService schedules) :
     /// Only the schedule is removed. Backups that exist are kept, a backup that is running is not
     /// stopped, and the database is not affected.
     /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Operator)]
     [HttpDelete]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]

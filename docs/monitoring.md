@@ -26,8 +26,8 @@ apart on purpose.
 
 | Question | Endpoint | Depends on |
 | --- | --- | --- |
-| Is the Aurora process alive? | `GET /health` | Nothing outside the process |
-| Can Aurora do its management work now? | `GET /health/ready` | System database, Docker |
+| Is the Aurora process alive? | `GET /health` (public) | Nothing outside the process |
+| Can Aurora do its management work now? | `GET /health/ready` (public) | System database, Docker |
 | What exactly is wrong? | `GET /health/storage`, `GET /api/v1/instances/{id}/health`, `GET /api/v1/monitoring/summary`, `GET /api/v1/jobs` | What each one names |
 
 Use `/health` for a liveness probe and `/health/ready` for a readiness probe. Do not point a
@@ -75,7 +75,7 @@ restarted and no instance is touched.
 
 ### `GET /health/storage` — S3 backup storage
 
-Separate from readiness on purpose. Backups may be local, and an S3 outage fails backups, not
+Needs an access token (any role), unlike the two probes above. Separate from readiness on purpose. Backups may be local, and an S3 outage fails backups, not
 the API.
 
 | Situation | `checks.s3` | Status |
@@ -320,8 +320,9 @@ Every request has an id.
 - Otherwise Aurora generates one.
 - The id is returned in the `X-Request-Id` response header, on error responses too.
 - Everything logged while the request is handled is in the scope `Request {CorrelationId}`, and
-  each request is logged once it is done: method, path (never the query string), status code and
-  duration. Health probes are logged at debug level only.
+  each request is logged once it is done: method, path (never the query string), status code,
+  duration and the id of the user who made it (`anonymous` if nobody was signed in; never the
+  token). Health probes are logged at debug level only.
 
 When a request creates a job, the worker processes that job under the same `CorrelationId`, and
 everything a job logs is in the scope `Job {JobId} ({JobType})`:
@@ -369,9 +370,9 @@ and stack traces, the Docker endpoint, container names, file system paths, S3 en
 and object keys. Health responses contain statuses only; the summary contains counts, ids, types,
 times and stable error codes only.
 
-There is no authentication yet (that is the next phase), which is why these endpoints are kept
-this conservative. Until then, expose them the way the rest of the API is exposed: to operators,
-not to the public.
+`/health` and `/health/ready` are public, so that whatever runs Aurora can probe it without a
+user; that is why they are kept this conservative. Everything else in monitoring, `/health/storage`
+included, needs a signed-in user: any role may read it. See [authentication.md](authentication.md).
 
 ## Configuration
 

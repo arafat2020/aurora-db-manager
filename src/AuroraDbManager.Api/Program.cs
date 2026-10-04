@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
@@ -12,8 +13,10 @@ using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Application.Jobs.RestoreDatabase;
 using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Application.Restores;
+using AuroraDbManager.Api.Application.Users;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Errors;
+using AuroraDbManager.Api.Infrastructure.Auth;
 using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Databases;
@@ -23,6 +26,7 @@ using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Infrastructure.Restores;
 using AuroraDbManager.Api.Infrastructure.Scheduling;
 using AuroraDbManager.Api.Infrastructure.Secrets;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -50,7 +54,7 @@ builder.Services
 builder.Services.ConfigureHttpJsonOptions(options => ConfigureJson(options.SerializerOptions));
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddBearerAuthentication());
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("SystemDatabase")
@@ -144,6 +148,25 @@ builder.Services.AddSingleton<AuroraMetrics>();
 builder.Services.AddScoped<MonitoringSummaryService>();
 builder.Services.AddAuroraHealthChecks();
 
+// Signing in and what a signed-in user may do. Every endpoint needs a signed-in user unless it
+// says otherwise; which role may do what is in AuroraPolicies. Background work, the job worker
+// and the scheduler, is the application's own and involves no user. See docs/authentication.md.
+builder.Services.AddOptions<AuthOptions>()
+    .Bind(builder.Configuration.GetSection(AuthOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>();
+builder.Services.AddSingleton<PasswordHashing>();
+builder.Services.AddSingleton<TokenService>();
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<UserService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+builder.Services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerSetup>();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddAuthorization(AuroraPolicies.Configure);
+
+// Before the workers: the first administrator is there, if it can be, when the application starts serving.
+builder.Services.AddHostedService<BootstrapAdminInitializer>();
 builder.Services.AddHostedService<JobWorker>();
 builder.Services.AddHostedService<ScheduledBackupWorker>();
 
@@ -160,10 +183,13 @@ app.UseStatusCodePages(statusCodeContext => ErrorHandling.WriteStatusCodeBodyAsy
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapAuroraHealthChecks();
 app.MapControllers();

@@ -3,6 +3,7 @@ using AuroraDbManager.Api.Domain.BackupSchedules;
 using AuroraDbManager.Api.Domain.Databases;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
+using AuroraDbManager.Api.Domain.Users;
 using AuroraDbManager.Api.Infrastructure.Secrets;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<BackupSchedule> BackupSchedules => Set<BackupSchedule>();
     public DbSet<InstanceSecret> InstanceSecrets => Set<InstanceSecret>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

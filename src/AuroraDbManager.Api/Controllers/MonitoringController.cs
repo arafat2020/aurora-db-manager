@@ -1,4 +1,6 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Monitoring;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
@@ -6,6 +8,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Route("api/v1/monitoring")]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class MonitoringController(MonitoringSummaryService summary) : ControllerBase
 {
     /// <summary>Returns a snapshot of the system's operational state.</summary>

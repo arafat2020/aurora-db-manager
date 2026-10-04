@@ -24,6 +24,12 @@ public static class ErrorCodes
     public const string InvalidCronExpression = "INVALID_CRON_EXPRESSION";
     public const string InvalidTimeZone = "INVALID_TIME_ZONE";
     public const string JobNotFound = "JOB_NOT_FOUND";
+    public const string Unauthorized = "UNAUTHORIZED";
+    public const string Forbidden = "FORBIDDEN";
+    public const string InvalidCredentials = "INVALID_CREDENTIALS";
+    public const string UserNotFound = "USER_NOT_FOUND";
+    public const string UsernameAlreadyExists = "USERNAME_ALREADY_EXISTS";
+    public const string LastAdministrator = "LAST_ADMINISTRATOR";
     public const string NotFound = "NOT_FOUND";
     public const string MethodNotAllowed = "METHOD_NOT_ALLOWED";
     public const string UnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE";

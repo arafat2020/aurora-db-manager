@@ -1,6 +1,20 @@
 @AuroraDbManager.Api_HostAddress = http://localhost:5177
 
+# Sign in first, then paste the accessToken from the response here. Never commit a real token.
+@accessToken = paste-the-access-token-here
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "<password>"
+}
+
+###
+
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/instances
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
@@ -15,6 +29,7 @@ Content-Type: application/json
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances?page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
@@ -22,22 +37,26 @@ Accept: application/json
 @instanceId = 00000000-0000-0000-0000-000000000000
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}
+Authorization: Bearer {{accessToken}}
 
 ###
 
 @jobId = 00000000-0000-0000-0000-000000000000
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/jobs/{{jobId}}
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/databases
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
@@ -47,6 +66,7 @@ Content-Type: application/json
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/databases?page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
@@ -54,19 +74,23 @@ Accept: application/json
 @databaseId = 00000000-0000-0000-0000-000000000000
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}
+Authorization: Bearer {{accessToken}}
 
 ###
 
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backups
+Authorization: Bearer {{accessToken}}
 
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backups?page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
@@ -74,16 +98,19 @@ Accept: application/json
 @backupId = 00000000-0000-0000-0000-000000000000
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 # Replaces the contents of the backup's database with the backup. Destructive.
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/backups/{{backupId}}/restore
+Authorization: Bearer {{accessToken}}
 
 ###
 
 POST {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
@@ -95,11 +122,13 @@ Content-Type: application/json
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 PUT {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
@@ -111,6 +140,7 @@ Content-Type: application/json
 ###
 
 DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+Authorization: Bearer {{accessToken}}
 
 ###
 
@@ -125,20 +155,60 @@ Accept: application/json
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/health/storage
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/health
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/jobs?status=failed&type=backup_database&page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
 Accept: application/json
 X-Request-Id: manual-check-1
 
 ###
 
 GET {{AuroraDbManager.Api_HostAddress}}/api/v1/monitoring/summary
+Authorization: Bearer {{accessToken}}
 Accept: application/json
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/users?page=1&pageSize=20
+Authorization: Bearer {{accessToken}}
+Accept: application/json
+
+###
+
+POST {{AuroraDbManager.Api_HostAddress}}/api/v1/users
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "username": "olivia",
+  "password": "<password>",
+  "role": "operator"
+}
+
+###
+
+@userId = 00000000-0000-0000-0000-000000000000
+
+PUT {{AuroraDbManager.Api_HostAddress}}/api/v1/users/{{userId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "role": "viewer",
+  "enabled": true
+}
+
+###
+
+DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/users/{{userId}}
+Authorization: Bearer {{accessToken}}

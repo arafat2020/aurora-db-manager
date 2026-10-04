@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
@@ -5,6 +6,7 @@ using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
+using AuroraDbManager.Api.Domain.Users;
 using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Docker;
@@ -69,6 +71,74 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     /// network and databases are managed in them by the real managers. For opt-in integration tests.
     /// </summary>
     public string? RealDockerNetwork { get; init; }
+
+    /// <summary>
+    /// The key this host signs and validates access tokens with. Generated for the test run, as
+    /// a deployment's is generated for the deployment; there is no key in the application to fall back to.
+    /// </summary>
+    public static readonly string SigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+
+    /// <summary>
+    /// The first administrator to create at startup, the way <c>Authentication:BootstrapAdmin</c>
+    /// does in a deployment. None by default: most tests need a token, not a user.
+    /// </summary>
+    public (string Username, string Password)? BootstrapAdmin { get; init; }
+
+    /// <summary>Changes the authentication settings after the test defaults were applied.</summary>
+    public Action<AuthOptions>? ConfigureAuth { get; init; }
+
+    /// <summary>
+    /// An access token for a user of the given role: a real JWT, signed with this host's key and
+    /// validated by the application's real authentication like any other. It is issued here
+    /// rather than by signing in so that tests of everything else need no user and no password
+    /// hashing; signing in itself is tested through the login endpoint. It does not expire within
+    /// a test, however far a test moves the application's clock.
+    /// </summary>
+    public static string TokenFor(UserRole role, Guid? userId = null, string? username = null) =>
+        new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+        {
+            Issuer = new JwtOptions().Issuer,
+            Audience = new JwtOptions().Audience,
+            NotBefore = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            IssuedAt = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Expires = new DateTime(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Claims = new Dictionary<string, object>
+            {
+                [AuroraPolicies.SubjectClaim] = (userId ?? Guid.NewGuid()).ToString("D"),
+                [AuroraPolicies.NameClaim] = username ?? $"test-{AuroraPolicies.RoleName(role)}",
+                [AuroraPolicies.RoleClaim] = AuroraPolicies.RoleName(role)
+            },
+            SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+                TokenService.SigningKey(new JwtOptions { SigningKey = SigningKey }),
+                Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256)
+        });
+
+    /// <summary>A client that sends the token of a user of the given role with every request.</summary>
+    public HttpClient CreateClientAs(UserRole role)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", TokenFor(role));
+        return client;
+    }
+
+    /// <summary>A client that sends no token.</summary>
+    public HttpClient CreateAnonymousClient()
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = null;
+        return client;
+    }
+
+    /// <summary>
+    /// Every client is an administrator's unless a test says otherwise: the tests of what the
+    /// application does are not tests of who may do it. Those are in the Security tests, which
+    /// use <see cref="CreateClientAs"/>, <see cref="CreateAnonymousClient"/> and real sign-ins.
+    /// </summary>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", TokenFor(UserRole.Admin));
+    }
 
     public FakeInstanceProvisioner Provisioner { get; } = new();
 
@@ -322,6 +392,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             // it had before: what one factory encrypted, a second one on the same database can read.
             services.RemoveAll<IDataProtectionProvider>();
             services.AddSingleton<IDataProtectionProvider>(DataProtection);
+
+            services.Configure<AuthOptions>(options =>
+            {
+                options.Jwt.SigningKey = SigningKey;
+                options.BootstrapAdmin.Username = BootstrapAdmin?.Username;
+                options.BootstrapAdmin.Password = BootstrapAdmin?.Password;
+                ConfigureAuth?.Invoke(options);
+            });
 
             services.Configure<JobOptions>(options =>
             {

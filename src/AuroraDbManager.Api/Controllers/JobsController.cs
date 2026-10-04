@@ -1,5 +1,7 @@
+using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Jobs;
 using AuroraDbManager.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuroraDbManager.Api.Controllers;
@@ -7,6 +9,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Route("api/v1/jobs")]
 [Produces("application/json")]
+[Authorize(Policy = AuroraPolicies.Viewer)]
 public sealed class JobsController(JobService jobs) : ControllerBase
 {
     /// <summary>Lists background jobs, newest first.</summary>

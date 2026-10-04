@@ -30,11 +30,26 @@ namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 /// creates one and needs neither S3 settings nor credentials.
 /// </para>
 /// </remarks>
-public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3ObjectClient, IDisposable
+public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options, ILogger<AwsS3ObjectClient> logger) : IS3ObjectClient, IDisposable
 {
     private const string MetadataPrefix = "x-amz-meta-";
 
-    private readonly Lazy<AmazonS3Client> _client = new(() => CreateClient(options.Value.S3));
+    private readonly Lazy<AmazonS3Client> _client = new(() =>
+    {
+        var settings = options.Value.S3;
+        if (IsPlainHttpToAnotherMachine(settings.Endpoint))
+        {
+            // Requests are signed, so the secret key itself is never sent; the backups are, unencrypted.
+            logger.LogWarning(
+                "Backups:S3:Endpoint is a plain http endpoint on another machine: backups travel unencrypted. Use https outside a trusted network");
+        }
+
+        return CreateClient(settings);
+    });
+
+    /// <summary>Whether the endpoint is unencrypted and not on this machine. An empty endpoint is AWS, which is always https.</summary>
+    public static bool IsPlainHttpToAnotherMachine(string? endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback;
 
     public async Task CheckBucketAsync(string bucket, CancellationToken cancellationToken)
     {

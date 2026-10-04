@@ -5,8 +5,16 @@ namespace AuroraDbManager.Api.Application.Instances;
 
 public sealed class CreateInstanceRequest
 {
-    /// <summary>Display name of the instance. Required, at most 100 characters.</summary>
+    // Far more than any host has, and far less than what turns into nonsense further down: a
+    // request is for resources, not for whatever number fits the field.
+    public const int MaxCpu = 256;
+    public const int MaxMemoryMb = 1024 * 1024;
+    public const int MaxStorageGb = 65_536;
+
+    /// <summary>Display name of the instance. Required, at most 100 characters, none of them control characters.</summary>
     [Required(ErrorMessage = "name is required.")]
+    // A display name is shown and listed as it is; a line break or an escape sequence in it is not a name.
+    [RegularExpression(@"^[^\p{Cc}]*$", ErrorMessage = "name must not contain control characters.")]
     [MaxLength(Instance.NameMaxLength, ErrorMessage = "name must be at most {1} characters.")]
     public string? Name { get; init; }
 
@@ -22,18 +30,18 @@ public sealed class CreateInstanceRequest
     [MaxLength(Instance.VersionMaxLength, ErrorMessage = "version must be at most {1} characters.")]
     public string? Version { get; init; }
 
-    /// <summary>Number of CPU cores. Required, must be greater than zero.</summary>
+    /// <summary>Number of CPU cores. Required, between 1 and 256.</summary>
     [Required(ErrorMessage = "cpu is required.")]
-    [Range(1, int.MaxValue, ErrorMessage = "cpu must be greater than zero.")]
+    [Range(1, MaxCpu, ErrorMessage = "cpu must be between {1} and {2}.")]
     public int? Cpu { get; init; }
 
-    /// <summary>Memory in megabytes. Required, must be greater than zero.</summary>
+    /// <summary>Memory in megabytes. Required, between 1 and 1048576 (1 TiB).</summary>
     [Required(ErrorMessage = "memoryMb is required.")]
-    [Range(1, int.MaxValue, ErrorMessage = "memoryMb must be greater than zero.")]
+    [Range(1, MaxMemoryMb, ErrorMessage = "memoryMb must be between {1} and {2}.")]
     public int? MemoryMb { get; init; }
 
-    /// <summary>Storage in gigabytes. Required, must be greater than zero.</summary>
+    /// <summary>Storage in gigabytes. Required, between 1 and 65536.</summary>
     [Required(ErrorMessage = "storageGb is required.")]
-    [Range(1, int.MaxValue, ErrorMessage = "storageGb must be greater than zero.")]
+    [Range(1, MaxStorageGb, ErrorMessage = "storageGb must be between {1} and {2}.")]
     public int? StorageGb { get; init; }
 }

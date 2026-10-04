@@ -118,6 +118,9 @@ GET /api/v1/instances
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs…
 ```
 
+Sign-in attempts are limited per client address (10 a minute by default). Beyond the limit the
+answer is `429 TOO_MANY_REQUESTS` with a `Retry-After` header, whatever the credentials.
+
 The username is not case sensitive. A wrong password, a username that does not exist and a
 disabled user are all answered with the same response, and take the same work to answer, so the
 login endpoint does not reveal which usernames exist:
@@ -191,6 +194,7 @@ is not thereby open: it falls back to "any signed-in user with a known role".
 | `401` | `UNAUTHORIZED` | No token, or a token that is not valid. |
 | `401` | `INVALID_CREDENTIALS` | Login only: wrong username or password, or a disabled user. |
 | `403` | `FORBIDDEN` | A valid token whose role does not allow the request. |
+| `429` | `TOO_MANY_REQUESTS` | Login only: too many attempts from this client address. |
 
 Both use the API's standard error body. Why a token was not accepted (missing, malformed, expired,
 wrong signature) is not said, in the body or in the `WWW-Authenticate` header. A request without
@@ -287,13 +291,16 @@ does, and **serve it over HTTPS only in production**: a bearer token sent over p
 read and reused by anyone on the path.
 
 - Aurora redirects HTTP to HTTPS when it knows its HTTPS port.
-- Behind a proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so Aurora sees the original
-  scheme and client address. Only do this when the proxy is the only way to reach Aurora.
+- Behind a proxy, list the proxy in `Security:TrustedProxies` so Aurora sees the original scheme
+  and client address. Do **not** set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded
+  headers from every client, and Aurora refuses to start with it.
+
+Reverse proxies, HTTPS, the login rate limit and the rest of how the API is exposed are described
+in [security.md](security.md).
 
 ## Not included
 
 By design, in this phase: multi-tenancy, organizations and resource ownership; refresh tokens and
 token revocation; OAuth, OpenID Connect and social login; MFA; API keys and service accounts;
-invitations, email verification and password-reset emails; an audit log; and rate limiting or
-lockout on the login endpoint. Until the last of these exists, put rate limiting for
-`/api/v1/auth/login` in the reverse proxy.
+invitations, email verification and password-reset emails; an audit log; and account lockout.
+Sign-in attempts are rate limited per client address; see [security.md](security.md).

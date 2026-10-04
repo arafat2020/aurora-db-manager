@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
@@ -28,6 +29,26 @@ public static class ErrorHandling
             details));
     }
 
+    /// <summary>
+    /// Answers an unhandled exception. A request the server itself refused while it was being
+    /// read, a body that grew past the size limit for instance, keeps the status the server gave
+    /// it; that is the client's error, not the application's. Everything else is a 500. Either
+    /// way the body is the standard one and says nothing of the exception.
+    /// </summary>
+    public static Task WriteExceptionBodyAsync(HttpContext context)
+    {
+        for (var error = context.Features.Get<IExceptionHandlerFeature>()?.Error; error is not null; error = error.InnerException)
+        {
+            if (error is BadHttpRequestException { StatusCode: >= 400 and < 500 } refused)
+            {
+                context.Response.StatusCode = refused.StatusCode;
+                break;
+            }
+        }
+
+        return WriteStatusCodeBodyAsync(context);
+    }
+
     /// <summary>Gives bodiless error responses (unknown routes, unhandled exceptions) the standard error body.</summary>
     public static Task WriteStatusCodeBodyAsync(HttpContext context)
     {
@@ -38,6 +59,8 @@ public static class ErrorHandling
             StatusCodes.Status403Forbidden => (ErrorCodes.Forbidden, "You are not allowed to do this."),
             StatusCodes.Status404NotFound => (ErrorCodes.NotFound, "The requested resource was not found."),
             StatusCodes.Status405MethodNotAllowed => (ErrorCodes.MethodNotAllowed, "The HTTP method is not allowed for this resource."),
+            StatusCodes.Status413PayloadTooLarge => (ErrorCodes.RequestTooLarge, "The request body is too large."),
+            StatusCodes.Status429TooManyRequests => (ErrorCodes.TooManyRequests, "Too many attempts. Try again later."),
             StatusCodes.Status415UnsupportedMediaType => (ErrorCodes.UnsupportedMediaType, "The request content type is not supported."),
             >= StatusCodes.Status500InternalServerError => (ErrorCodes.InternalError, "An unexpected error occurred."),
             _ => (ErrorCodes.RequestFailed, "The request could not be processed.")

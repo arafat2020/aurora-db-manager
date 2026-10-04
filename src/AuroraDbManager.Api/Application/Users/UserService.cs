@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Domain.Users;
 using AuroraDbManager.Api.Infrastructure.Persistence;
@@ -15,7 +16,7 @@ namespace AuroraDbManager.Api.Application.Users;
 /// managed any more, and nobody would be left to repair that. Deleting, disabling or demoting the
 /// only enabled administrator is therefore refused. The check and the change are one serializable
 /// transaction, so two requests that each remove a different one of the last two administrators
-/// cannot both go through.
+/// cannot both go through; the one the database refuses is tried once more and then refused properly.
 /// </remarks>
 public sealed class UserService(
     AppDbContext db,
@@ -79,7 +80,10 @@ public sealed class UserService(
     }
 
     /// <summary>Sets the user's role and whether they may sign in, and their password if one is given.</summary>
-    public async Task<UserResult> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken)
+    public Task<UserResult> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken) =>
+        WithRetryAsync(() => UpdateOnceAsync(id, request, cancellationToken));
+
+    private async Task<UserResult> UpdateOnceAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
@@ -116,7 +120,10 @@ public sealed class UserService(
         return new UserResult(UserStatus.Ok, UserResponse.From(user));
     }
 
-    public async Task<UserResult> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    public Task<UserResult> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        WithRetryAsync(() => DeleteOnceAsync(id, cancellationToken));
+
+    private async Task<UserResult> DeleteOnceAsync(Guid id, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
@@ -137,6 +144,39 @@ public sealed class UserService(
 
         logger.LogInformation("User {UserId} deleted by user {ActorId}", user.Id, currentUser.UserId);
         return new UserResult(UserStatus.Ok);
+    }
+
+    /// <summary>
+    /// Two requests that change administrators at the same moment cannot both commit: the
+    /// database lets one through and refuses the other with a serialization failure, which is
+    /// what keeps the last administrator safe. The refused one is run once more, from the start;
+    /// it then sees what the other did and is answered on that basis, with a result, not a 500.
+    /// </summary>
+    private async Task<UserResult> WithRetryAsync(Func<Task<UserResult>> operation)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (Exception exception) when (IsSerializationFailure(exception))
+        {
+            db.ChangeTracker.Clear();
+            return await operation();
+        }
+    }
+
+    // PostgreSQL's serialization_failure and deadlock_detected, wherever in the chain they are.
+    private static bool IsSerializationFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is DbException { SqlState: "40001" or "40P01" })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<bool> IsLastEnabledAdministratorAsync(User user, CancellationToken cancellationToken) =>

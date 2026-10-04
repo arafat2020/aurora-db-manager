@@ -26,6 +26,7 @@ using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Infrastructure.Restores;
 using AuroraDbManager.Api.Infrastructure.Scheduling;
 using AuroraDbManager.Api.Infrastructure.Secrets;
+using AuroraDbManager.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -165,6 +166,11 @@ builder.Services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerSetu
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddAuthorization(AuroraPolicies.Configure);
 
+// How the API is exposed: trusted proxies, the login rate limit, the request size limit and the
+// response headers. CORS is deliberately not enabled: nothing is served to browsers of other
+// origins. See docs/security.md.
+builder.Services.AddAuroraSecurity(builder.Configuration);
+
 // Before the workers: the first administrator is there, if it can be, when the application starts serving.
 builder.Services.AddHostedService<BootstrapAdminInitializer>();
 builder.Services.AddHostedService<JobWorker>();
@@ -176,9 +182,12 @@ var app = builder.Build();
 app.Services.GetRequiredService<AuroraMetrics>();
 
 // Configure the HTTP request pipeline.
-// First, so every request has its id before anything is logged for it, errors included.
+// First of all, so that what follows, logging and rate limiting included, sees the client a trusted proxy reports.
+app.UseAuroraForwardedHeaders();
+// Then, so every request has its id before anything is logged for it, errors included.
 app.UseMiddleware<RequestCorrelationMiddleware>();
-app.UseExceptionHandler(errorApp => errorApp.Run(ErrorHandling.WriteStatusCodeBodyAsync));
+app.UseAuroraSecurityHeaders();
+app.UseExceptionHandler(errorApp => errorApp.Run(ErrorHandling.WriteExceptionBodyAsync));
 app.UseStatusCodePages(statusCodeContext => ErrorHandling.WriteStatusCodeBodyAsync(statusCodeContext.HttpContext));
 
 if (app.Environment.IsDevelopment())
@@ -186,9 +195,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-app.UseHttpsRedirection();
+app.UseAuroraRequestLimits();
+app.UseAuroraHttps();
 
 app.UseAuthentication();
+// After routing has chosen the endpoint: only the login endpoint has a limit, and a bucket of its own.
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapAuroraHealthChecks();

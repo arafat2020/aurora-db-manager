@@ -106,6 +106,34 @@ public sealed class DockerProvisioningIntegrationTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task InstanceContainers_GetNoHostPrivileges_NoHostPaths_AndNoHostPorts()
+    {
+        foreach (var (engine, version) in new[] { (InstanceEngine.Postgres, "16"), (InstanceEngine.Mysql, "8.4") })
+        {
+            var instance = NewInstance(engine, version, memoryMb: engine == InstanceEngine.Mysql ? 1024 : 512);
+
+            // The database still initializes and accepts connections under these restrictions.
+            await Provisioner().ProvisionAsync(instance, default);
+
+            var container = await _client.Containers.InspectContainerAsync(DockerResourceNaming.ContainerName(instance.Id));
+            Assert.True(container.State.Running);
+            Assert.False(container.HostConfig.Privileged);
+            Assert.Contains("no-new-privileges:true", container.HostConfig.SecurityOpt);
+            Assert.True(container.HostConfig.CapAdd is null or { Count: 0 });
+            Assert.True(container.HostConfig.Devices is null or { Count: 0 });
+            // Nothing of the host's filesystem, the Docker socket least of all: one named volume.
+            Assert.True(container.HostConfig.Binds is null or { Count: 0 });
+            Assert.Equal("volume", Assert.Single(container.Mounts).Type);
+            // Nothing published on the host, and none of the host's namespaces.
+            Assert.False(container.HostConfig.PublishAllPorts);
+            Assert.True(container.HostConfig.PortBindings is null or { Count: 0 });
+            Assert.Equal(_options.NetworkName, container.HostConfig.NetworkMode);
+            Assert.NotEqual("host", container.HostConfig.PidMode);
+            Assert.NotEqual("host", container.HostConfig.IpcMode);
+        }
+    }
+
+    [DockerFact]
     public async Task Postgres_RepeatedProvisioning_AdoptsRunningStoppedAndVolumeOnlyStates()
     {
         var instance = NewInstance(InstanceEngine.Postgres, "16", memoryMb: 512);

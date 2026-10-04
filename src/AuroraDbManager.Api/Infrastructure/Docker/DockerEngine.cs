@@ -121,6 +121,11 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
                         NanoCPUs = spec.NanoCpus,
                         Memory = spec.MemoryBytes,
                         NetworkMode = spec.NetworkName,
+                        // Stated, not left to defaults: never privileged, no way to gain privileges
+                        // after start, and no port of the host. The only mount is the named volume below.
+                        Privileged = false,
+                        SecurityOpt = ["no-new-privileges:true"],
+                        PublishAllPorts = false,
                         Mounts =
                         [
                             new Mount { Type = "volume", Source = spec.VolumeName, Target = spec.VolumeTarget }

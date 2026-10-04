@@ -26,6 +26,8 @@ public static class ErrorCodes
     public const string JobNotFound = "JOB_NOT_FOUND";
     public const string Unauthorized = "UNAUTHORIZED";
     public const string Forbidden = "FORBIDDEN";
+    public const string TooManyRequests = "TOO_MANY_REQUESTS";
+    public const string RequestTooLarge = "REQUEST_TOO_LARGE";
     public const string InvalidCredentials = "INVALID_CREDENTIALS";
     public const string UserNotFound = "USER_NOT_FOUND";
     public const string UsernameAlreadyExists = "USERNAME_ALREADY_EXISTS";

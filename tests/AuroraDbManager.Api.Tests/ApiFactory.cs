@@ -14,6 +14,7 @@ using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Tests.Backups;
 using AuroraDbManager.Api.Tests.Databases;
 using AuroraDbManager.Api.Tests.Docker;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -83,6 +84,22 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
     /// does in a deployment. None by default: most tests need a token, not a user.
     /// </summary>
     public (string Username, string Password)? BootstrapAdmin { get; init; }
+
+    /// <summary>Changes the security settings after the test defaults were applied.</summary>
+    public Action<Infrastructure.Security.SecurityOptions>? ConfigureSecurity { get; init; }
+
+    /// <summary>
+    /// The header a test names the address its request "arrives from" with. The test server has
+    /// no sockets, so there is no peer address unless a test says what it is; this stands in for
+    /// the TCP connection, which no client can choose, and is not something the application reads.
+    /// </summary>
+    public const string RemoteAddressHeader = "X-Test-Connection-Address";
+
+    /// <summary>Host settings, as environment variables with the ASPNETCORE_ prefix would set them.</summary>
+    public IReadOnlyDictionary<string, string> HostSettings { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The environment the application runs in. Development by default, as the test host makes it.</summary>
+    public string? EnvironmentName { get; init; }
 
     /// <summary>Changes the authentication settings after the test defaults were applied.</summary>
     public Action<AuthOptions>? ConfigureAuth { get; init; }
@@ -319,8 +336,27 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        if (EnvironmentName is not null)
+        {
+            builder.UseEnvironment(EnvironmentName);
+        }
+
+        foreach (var (key, value) in HostSettings)
+        {
+            builder.UseSetting(key, value);
+        }
+
         builder.ConfigureServices(services =>
         {
+            services.AddSingleton<IStartupFilter>(new ConnectionAddressFilter());
+            services.Configure<Infrastructure.Security.SecurityOptions>(options =>
+            {
+                // Every test client has the same (unknown) address; the limit of a real deployment
+                // would have tests that sign in a lot throttle each other. Tests of the limit set their own.
+                options.LoginRateLimit.PermitLimit = 10_000;
+                ConfigureSecurity?.Invoke(options);
+            });
+
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();
             services.AddDbContext<AppDbContext>(options =>
@@ -441,6 +477,24 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             }
         }
     }
+}
+
+/// <summary>Sets the connection's remote address, before anything of the application runs, to what <see cref="ApiFactory.RemoteAddressHeader"/> says.</summary>
+internal sealed class ConnectionAddressFilter : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        app.Use((context, following) =>
+        {
+            if (context.Request.Headers.TryGetValue(ApiFactory.RemoteAddressHeader, out var address))
+            {
+                context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(address.ToString());
+            }
+
+            return following(context);
+        });
+        next(app);
+    };
 }
 
 /// <summary>A database file that outlives the factories using it, for tests that restart the application.</summary>

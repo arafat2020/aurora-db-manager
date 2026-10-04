@@ -225,6 +225,39 @@ public sealed class S3BackupIntegrationTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task StorageHealth_AsksTheRealStoreAboutTheBucket_AndNeverTouchesReadinessOrLiveness()
+    {
+        // The configured bucket exists: one HEAD request on it, no object read or written.
+        var healthy = await (await _client.GetAsync(StorageHealthUrl)).ReadJsonAsync(HttpStatusCode.OK);
+        Assert.Equal("healthy", healthy.Status());
+        Assert.Equal("healthy", healthy.GetProperty("checks").GetProperty("s3").GetString());
+        Assert.Empty(await ObjectKeysAsync());
+
+        // A bucket that is not there, and an endpoint nothing answers on.
+        foreach (var factory in new[] { S3Factory(bucket: "aurora-it-no-such-bucket"), S3Factory(endpoint: "http://127.0.0.1:9") })
+        {
+            using var client = factory.CreateClient();
+            var response = await client.GetAsync(StorageHealthUrl);
+            var body = await response.ReadJsonAsync(HttpStatusCode.ServiceUnavailable);
+            Assert.Equal("unhealthy", body.GetProperty("checks").GetProperty("s3").GetString());
+
+            var text = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(SecretKey, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(AccessKey, text, StringComparison.Ordinal);
+            Assert.DoesNotContain("127.0.0.1", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("aurora-it-no-such-bucket", text, StringComparison.Ordinal);
+
+            // S3 being down is not Aurora being down: with a real Docker behind it, it is ready.
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(HealthUrl)).StatusCode);
+            var ready = await (await client.GetAsync(ReadinessUrl)).ReadJsonAsync(HttpStatusCode.OK);
+            Assert.Equal("healthy", ready.Status());
+            Assert.False(ready.GetProperty("checks").TryGetProperty("s3", out _));
+
+            Assert.DoesNotContain(factory.Logs.Entries, entry => entry.Contains(SecretKey, StringComparison.Ordinal));
+        }
+    }
+
+    [DockerFact]
     public async Task BucketDoesNotExist_BackupFailsAsBucketNotFound_AndIsNotCompleted()
     {
         var factory = S3Factory(bucket: "aurora-it-no-such-bucket");

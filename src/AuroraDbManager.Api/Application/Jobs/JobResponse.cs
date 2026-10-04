@@ -52,6 +52,16 @@ public sealed record JobResponse(
         job.ErrorCode is null ? null : new JobErrorResponse(job.ErrorCode, job.ErrorMessage ?? string.Empty));
 }
 
+/// <param name="Items">Jobs on the requested page, newest first.</param>
+/// <param name="Page">1-based page number.</param>
+/// <param name="PageSize">Requested number of items per page.</param>
+/// <param name="TotalCount">Total number of jobs matching the filters, across all pages.</param>
+public sealed record JobListResponse(
+    IReadOnlyList<JobResponse> Items,
+    int Page,
+    int PageSize,
+    int TotalCount);
+
 /// <param name="Code">Stable, machine-readable error code, e.g. <c>PROVISIONING_FAILED</c>.</param>
 /// <param name="Message">Human-readable description of the failure.</param>
 public sealed record JobErrorResponse(string Code, string Message);

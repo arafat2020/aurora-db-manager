@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Domain.Databases;
@@ -17,6 +18,8 @@ namespace AuroraDbManager.Api.Application.Jobs.RestoreDatabase;
 public sealed class RestoreDatabaseHandler(
     AppDbContext db,
     IEnumerable<IRestoreManager> managers,
+    TimeProvider timeProvider,
+    AuroraMetrics metrics,
     ILogger<RestoreDatabaseHandler> logger) : IJobHandler
 {
     public JobType Type => JobType.RestoreDatabase;
@@ -59,6 +62,14 @@ public sealed class RestoreDatabaseHandler(
             "Job {JobId} attempt {Attempt}: restoring backup {BackupId} into database {DatabaseId} in {Engine} instance {InstanceId}",
             job.Id, job.Attempt, backup.Id, database.Id, instance.Engine, instance.Id);
 
+        // The job is the restore, so its first attempt is the restore's start. An attempt that
+        // was interrupted runs again under the same number and is counted again.
+        if (job.Attempt == 1)
+        {
+            metrics.RestoreStarted(instance.Engine, backup.StorageType);
+        }
+
+        var attemptStarted = timeProvider.GetTimestamp();
         try
         {
             await ManagerFor(instance).RestoreAsync(instance, database, backup, job.Id, cancellationToken);
@@ -69,17 +80,34 @@ public sealed class RestoreDatabaseHandler(
         }
         catch (RestoreOperationException exception)
         {
+            metrics.RestoreAttemptFailed(instance.Engine, backup.StorageType, timeProvider.GetElapsedTime(attemptStarted));
             // Its code and message are written for clients.
             throw new JobExecutionException(exception.Code, exception.Message, exception);
         }
         catch (Exception exception)
         {
+            metrics.RestoreAttemptFailed(instance.Engine, backup.StorageType, timeProvider.GetElapsedTime(attemptStarted));
             throw new JobExecutionException(RestoreErrorCodes.RestoreProcessFailed, "The restore failed.", exception);
         }
+
+        var attemptDuration = timeProvider.GetElapsedTime(attemptStarted);
+        metrics.RestoreCompleted(instance.Engine, backup.StorageType, attemptDuration);
+        logger.LogInformation(
+            "Restore of backup {BackupId} into database {DatabaseId} completed, attempt took {DurationMs} ms",
+            backup.Id, database.Id, (long)attemptDuration.TotalMilliseconds);
     }
 
-    // Nothing to record anywhere but on the job itself.
-    public Task OnFailedAsync(Job job, CancellationToken cancellationToken) => Task.CompletedTask;
+    // Nothing to record anywhere but on the job itself; what follows only observes.
+    public async Task OnFailedAsync(Job job, CancellationToken cancellationToken)
+    {
+        var errorCode = job.ErrorCode ?? RestoreErrorCodes.RestoreProcessFailed;
+        metrics.RestoreFailed(
+            await db.EngineOfAsync(job.InstanceId, cancellationToken),
+            await db.StorageTypeOfAsync(job.BackupId, cancellationToken),
+            errorCode);
+        logger.LogWarning(
+            "Restore of backup {BackupId} into database {DatabaseId} failed: {ErrorCode}", job.BackupId, job.DatabaseId, errorCode);
+    }
 
     private IRestoreManager ManagerFor(Instance instance) =>
         managers.FirstOrDefault(manager => manager.Engine == instance.Engine)

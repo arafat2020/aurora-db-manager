@@ -36,6 +36,12 @@ public sealed class FakeDockerEngine : IDockerEngine
 
     public void AddContainer(DockerContainer container) => Containers[container.Name] = container;
 
+    public Task PingAsync(CancellationToken cancellationToken)
+    {
+        Record(nameof(PingAsync), string.Empty, cancellationToken);
+        return Task.CompletedTask;
+    }
+
     public Task<bool> NetworkExistsAsync(string name, CancellationToken cancellationToken)
     {
         Record(nameof(NetworkExistsAsync), name, cancellationToken);

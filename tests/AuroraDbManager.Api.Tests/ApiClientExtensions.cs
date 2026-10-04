@@ -10,6 +10,12 @@ internal static class ApiClientExtensions
     public const string JobsUrl = "/api/v1/jobs";
     public const string DatabasesUrl = "/api/v1/databases";
     public const string BackupsUrl = "/api/v1/backups";
+    public const string MonitoringSummaryUrl = "/api/v1/monitoring/summary";
+    public const string HealthUrl = "/health";
+    public const string ReadinessUrl = "/health/ready";
+    public const string StorageHealthUrl = "/health/storage";
+
+    public static string InstanceHealthUrl(Guid instanceId) => $"{InstancesUrl}/{instanceId}/health";
 
     public static string DatabaseBackupsUrl(Guid databaseId) => $"{DatabasesUrl}/{databaseId}/backups";
 

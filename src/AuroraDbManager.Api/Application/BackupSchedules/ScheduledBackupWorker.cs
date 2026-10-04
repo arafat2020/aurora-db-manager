@@ -32,7 +32,8 @@ public sealed class ScheduledBackupWorker(
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     // For example the system database being unreachable; tried again at the next pass.
-                    logger.LogError(exception, "The backup scheduler could not check for due schedules");
+                    // The pass has counted and logged its own failure; this covers what fails around it.
+                    logger.LogDebug(exception, "The backup scheduler could not check for due schedules");
                 }
 
                 await Task.Delay(interval, timeProvider, stoppingToken);

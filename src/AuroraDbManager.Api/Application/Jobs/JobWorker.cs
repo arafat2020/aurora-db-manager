@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Instances;
+using AuroraDbManager.Api.Application.Monitoring;
 using Microsoft.Extensions.Options;
 
 namespace AuroraDbManager.Api.Application.Jobs;
@@ -97,8 +98,15 @@ public sealed class JobWorker(
         }
     }
 
-    private async ValueTask ProcessAsync(Guid jobId, CancellationToken cancellationToken)
+    private async ValueTask ProcessAsync(QueuedJob queued, CancellationToken cancellationToken)
     {
+        var jobId = queued.JobId;
+
+        // Under the id of the request that created the job, so its logs join that request's.
+        using var correlation = queued.CorrelationId is null
+            ? null
+            : logger.BeginScope("Request {" + RequestCorrelation.LogProperty + "}", queued.CorrelationId);
+
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();

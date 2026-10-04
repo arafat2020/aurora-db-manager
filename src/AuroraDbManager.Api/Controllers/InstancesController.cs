@@ -7,7 +7,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Route("api/v1/instances")]
 [Produces("application/json")]
-public sealed class InstancesController(InstanceService instances) : ControllerBase
+public sealed class InstancesController(InstanceService instances, InstanceHealthService health) : ControllerBase
 {
     /// <summary>Creates an instance and starts provisioning it in the background.</summary>
     /// <remarks>
@@ -42,6 +42,22 @@ public sealed class InstancesController(InstanceService instances) : ControllerB
     {
         var instance = await instances.GetAsync(id, cancellationToken);
         return instance is null ? InstanceNotFound() : Ok(instance);
+    }
+
+    /// <summary>Reports how the instance's database server is doing right now.</summary>
+    /// <remarks>
+    /// Looks at the instance's container and asks its database whether it accepts connections,
+    /// once, at the time of the request. The answer is <c>200</c> whatever the health is; it is
+    /// in <c>status</c>. <c>instanceStatus</c> is the instance's status on record and may disagree
+    /// with what was observed: this request never changes it, and repairs nothing.
+    /// </remarks>
+    [HttpGet("{id:guid}/health")]
+    [ProducesResponseType<InstanceHealthResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Health(Guid id, CancellationToken cancellationToken)
+    {
+        var report = await health.GetAsync(id, cancellationToken);
+        return report is null ? InstanceNotFound() : Ok(report);
     }
 
     /// <summary>Deletes an instance, its database server and all of its data.</summary>

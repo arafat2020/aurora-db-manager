@@ -36,6 +36,25 @@ public sealed class AwsS3ObjectClient(IOptions<BackupOptions> options) : IS3Obje
 
     private readonly Lazy<AmazonS3Client> _client = new(() => CreateClient(options.Value.S3));
 
+    public async Task CheckBucketAsync(string bucket, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // A HEAD request on the bucket: no object is listed, read or written.
+            await _client.Value.HeadBucketAsync(new HeadBucketRequest { BucketName = bucket }, cancellationToken);
+        }
+        catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            // A HEAD request has no error body to say so, but on a bucket 404 can only mean this.
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageBucketNotFound, "The backup storage bucket does not exist.", exception);
+        }
+        catch (Exception exception) when (!IsCancellation(exception, cancellationToken))
+        {
+            throw S3Errors.Translate(exception);
+        }
+    }
+
     public async Task<S3ObjectInfo?> FindObjectAsync(string bucket, string key, CancellationToken cancellationToken)
     {
         try

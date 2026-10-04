@@ -111,3 +111,34 @@ Content-Type: application/json
 ###
 
 DELETE {{AuroraDbManager.Api_HostAddress}}/api/v1/databases/{{databaseId}}/backup-schedule
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/health/ready
+Accept: application/json
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/health/storage
+Accept: application/json
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/instances/{{instanceId}}/health
+Accept: application/json
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/jobs?status=failed&type=backup_database&page=1&pageSize=20
+Accept: application/json
+X-Request-Id: manual-check-1
+
+###
+
+GET {{AuroraDbManager.Api_HostAddress}}/api/v1/monitoring/summary
+Accept: application/json

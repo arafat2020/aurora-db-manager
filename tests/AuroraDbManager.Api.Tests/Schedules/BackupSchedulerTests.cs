@@ -354,7 +354,7 @@ public sealed class BackupSchedulerTests : IDisposable
         // The manual backup is untouched and completes as it would have.
         await factory.ProcessJobAsync(manualJobId);
         Assert.Equal("completed", (await client.GetBackupAsync(manualId)).Status());
-        Assert.Contains(factory.Logs.Entries, entry => entry.Contains("was skipped", StringComparison.Ordinal));
+        Assert.Contains(factory.Logs.Entries, entry => entry.Contains("Scheduled backup skipped", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -559,7 +559,14 @@ public sealed class BackupSchedulerTests : IDisposable
             services.GetRequiredService<IOptions<Application.Jobs.JobOptions>>(),
             _clock,
             NullLogger<Application.Backups.BackupService>.Instance);
-        var scheduler = new BackupScheduler(db, backups, services.GetRequiredService<IScheduleCalculator>(), _clock, NullLogger<BackupScheduler>.Instance);
+        var scheduler = new BackupScheduler(
+            db,
+            backups,
+            services.GetRequiredService<IScheduleCalculator>(),
+            _clock,
+            services.GetRequiredService<Application.Monitoring.AuroraMetrics>(),
+            services.GetRequiredService<SchedulerHeartbeat>(),
+            NullLogger<BackupScheduler>.Instance);
 
         var jobIds = await scheduler.RunDueAsync(default);
 

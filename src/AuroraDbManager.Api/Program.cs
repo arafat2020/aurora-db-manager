@@ -10,6 +10,7 @@ using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
 using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Application.Jobs.RestoreDatabase;
+using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Errors;
@@ -17,6 +18,7 @@ using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Databases;
 using AuroraDbManager.Api.Infrastructure.Docker;
+using AuroraDbManager.Api.Infrastructure.Monitoring;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using AuroraDbManager.Api.Infrastructure.Restores;
 using AuroraDbManager.Api.Infrastructure.Scheduling;
@@ -56,6 +58,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<InstanceService>();
+builder.Services.AddScoped<InstanceHealthService>();
 builder.Services.AddScoped<DatabaseService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<RestoreService>();
@@ -85,6 +88,7 @@ builder.Services.AddOptions<DockerOptions>()
 builder.Services.AddSingleton<IDockerEngine, DockerEngine>();
 builder.Services.AddSingleton<DockerImageResolver>();
 builder.Services.AddScoped<IInstanceProvisioner, DockerInstanceProvisioner>();
+builder.Services.AddSingleton<IInstanceRuntimeProbe, DockerInstanceRuntimeProbe>();
 
 // Database managers reach an instance's server on the Docker network; see DockerInstanceEndpointResolver.
 builder.Services.AddOptions<DatabaseManagerOptions>()
@@ -132,13 +136,25 @@ builder.Services.AddScoped<IInstanceSecretStore, ProtectedInstanceSecretStore>()
 builder.Services.AddSingleton<IScheduleCalculator, CronosScheduleCalculator>();
 builder.Services.AddScoped<BackupScheduleService>();
 builder.Services.AddScoped<BackupScheduler>();
+builder.Services.AddSingleton<SchedulerHeartbeat>();
+
+// Monitoring observes the services above and runs none of their work: health checks, standard
+// .NET metrics on one meter, and a summary read from the system database. See docs/monitoring.md.
+builder.Services.AddSingleton<AuroraMetrics>();
+builder.Services.AddScoped<MonitoringSummaryService>();
+builder.Services.AddAuroraHealthChecks();
 
 builder.Services.AddHostedService<JobWorker>();
 builder.Services.AddHostedService<ScheduledBackupWorker>();
 
 var app = builder.Build();
 
+// Created now rather than with the first job, so the gauges of pending and running jobs are there from the start.
+app.Services.GetRequiredService<AuroraMetrics>();
+
 // Configure the HTTP request pipeline.
+// First, so every request has its id before anything is logged for it, errors included.
+app.UseMiddleware<RequestCorrelationMiddleware>();
 app.UseExceptionHandler(errorApp => errorApp.Run(ErrorHandling.WriteStatusCodeBodyAsync));
 app.UseStatusCodePages(statusCodeContext => ErrorHandling.WriteStatusCodeBodyAsync(statusCodeContext.HttpContext));
 
@@ -149,6 +165,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.MapAuroraHealthChecks();
 app.MapControllers();
 
 app.Run();

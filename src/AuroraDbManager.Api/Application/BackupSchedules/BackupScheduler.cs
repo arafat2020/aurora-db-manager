@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,42 +30,81 @@ namespace AuroraDbManager.Api.Application.BackupSchedules;
 /// backup is created and the schedule moves on all the same. A schedule never waits for a
 /// database and never builds up a backlog.
 /// </para>
+/// <para>
+/// <b>Observability.</b> Every pass, triggered backup, skipped occurrence and failure is counted
+/// and logged, and a pass that went through is noted on the <see cref="SchedulerHeartbeat"/>.
+/// None of that is read back here: what is due is decided from the database alone.
+/// </para>
 /// </remarks>
 public sealed class BackupScheduler(
     AppDbContext db,
     BackupService backups,
     IScheduleCalculator calculator,
     TimeProvider timeProvider,
+    AuroraMetrics metrics,
+    SchedulerHeartbeat heartbeat,
     ILogger<BackupScheduler> logger)
 {
+    /// <summary>The reason given when the database was taken by another operation between the check and the save.</summary>
+    public const string DatabaseBusy = "database_busy";
+
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
 
     /// <summary>Deals with every schedule that is due now.</summary>
     /// <returns>The ids of the backup jobs that were created and queued.</returns>
     public async Task<IReadOnlyList<Guid>> RunDueAsync(CancellationToken cancellationToken)
     {
-        var now = UtcNow;
-        var due = await db.BackupSchedules.AsNoTracking()
-            .Where(s => s.Enabled && s.NextRunAt != null && s.NextRunAt <= now)
-            .OrderBy(s => s.NextRunAt)
-            .Select(s => s.Id)
-            .ToListAsync(cancellationToken);
+        var started = timeProvider.GetTimestamp();
+
+        List<Guid> due;
+        try
+        {
+            var now = UtcNow;
+            due = await db.BackupSchedules.AsNoTracking()
+                .Where(s => s.Enabled && s.NextRunAt != null && s.NextRunAt <= now)
+                .OrderBy(s => s.NextRunAt)
+                .Select(s => s.Id)
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // For example the system database being unreachable. The caller tries again at the next pass.
+            metrics.SchedulerFailed();
+            metrics.SchedulerPassCompleted(timeProvider.GetElapsedTime(started));
+            logger.LogError(
+                exception,
+                "Scheduled backup scheduler pass failed: {ErrorType} after {DurationMs} ms",
+                exception.GetType().Name, (long)timeProvider.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
 
         var jobs = new List<Guid>();
+        var skipped = 0;
+        var failed = 0;
         foreach (var scheduleId in due)
         {
             try
             {
-                if (await RunAsync(scheduleId, cancellationToken) is { } jobId)
+                var (outcome, jobId) = await RunAsync(scheduleId, cancellationToken);
+                if (jobId is { } triggered)
                 {
-                    jobs.Add(jobId);
+                    jobs.Add(triggered);
+                }
+                else if (outcome == Outcome.Skipped)
+                {
+                    skipped++;
                 }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 // One schedule that cannot be dealt with does not hold up the others. It is
                 // still due and is tried again at the next pass.
-                logger.LogError(exception, "Backup schedule {BackupScheduleId} could not be run", scheduleId);
+                failed++;
+                metrics.SchedulerFailed();
+                logger.LogError(
+                    exception,
+                    "Scheduled backup scheduler pass failed for schedule {ScheduleId}: {ErrorType}",
+                    scheduleId, exception.GetType().Name);
             }
             finally
             {
@@ -72,10 +112,23 @@ public sealed class BackupScheduler(
             }
         }
 
+        var duration = timeProvider.GetElapsedTime(started);
+        metrics.SchedulerPassCompleted(duration);
+        if (failed == 0)
+        {
+            heartbeat.RecordSuccessfulPass(UtcNow);
+        }
+
+        // Most passes find nothing due; those are not worth a line in the ordinary log.
+        logger.Log(
+            due.Count == 0 ? LogLevel.Debug : LogLevel.Information,
+            "Scheduled backup scheduler pass completed: {DueCount} due, {TriggeredCount} triggered, {SkippedCount} skipped, {FailedCount} failed in {DurationMs} ms",
+            due.Count, jobs.Count, skipped, failed, (long)duration.TotalMilliseconds);
+
         return jobs;
     }
 
-    private async Task<Guid?> RunAsync(Guid scheduleId, CancellationToken cancellationToken)
+    private async Task<(Outcome Outcome, Guid? JobId)> RunAsync(Guid scheduleId, CancellationToken cancellationToken)
     {
         var now = UtcNow;
 
@@ -83,7 +136,7 @@ public sealed class BackupScheduler(
         var schedule = await db.BackupSchedules.FirstOrDefaultAsync(s => s.Id == scheduleId, cancellationToken);
         if (schedule is not { Enabled: true, NextRunAt: { } occurrence } || occurrence > now)
         {
-            return null;
+            return (Outcome.NotDue, null);
         }
 
         // After now, not after the occurrence: whatever was missed in between is not run.
@@ -100,8 +153,8 @@ public sealed class BackupScheduler(
         catch (DbUpdateConcurrencyException)
         {
             logger.LogInformation(
-                "Backup schedule {BackupScheduleId}: the occurrence of {Occurrence} was dealt with elsewhere", scheduleId, occurrence);
-            return null;
+                "Backup schedule {ScheduleId}: the occurrence of {Occurrence} was dealt with elsewhere", scheduleId, occurrence);
+            return (Outcome.NotDue, null);
         }
         catch (DbUpdateException) when (prepared.Status == CreateBackupStatus.Accepted)
         {
@@ -113,7 +166,7 @@ public sealed class BackupScheduler(
             var current = await db.BackupSchedules.FirstOrDefaultAsync(s => s.Id == scheduleId, cancellationToken);
             if (current is not { Enabled: true } || current.NextRunAt != occurrence)
             {
-                return null;
+                return (Outcome.NotDue, null);
             }
 
             current.Advance(next, now);
@@ -123,27 +176,41 @@ public sealed class BackupScheduler(
             }
             catch (DbUpdateConcurrencyException)
             {
-                return null;
+                return (Outcome.NotDue, null);
             }
 
-            logger.LogWarning(
-                "Backup schedule {BackupScheduleId}: the occurrence of {Occurrence} was skipped, database {DatabaseId} became busy; next run at {NextRunAt}",
-                scheduleId, occurrence, current.DatabaseId, next);
-            return null;
+            Skipped(scheduleId, current.DatabaseId, DatabaseBusy, occurrence, next);
+            return (Outcome.Skipped, null);
         }
 
         if (prepared.Status != CreateBackupStatus.Accepted)
         {
-            logger.LogWarning(
-                "Backup schedule {BackupScheduleId}: the occurrence of {Occurrence} was skipped, database {DatabaseId} cannot be backed up now ({Reason}); next run at {NextRunAt}",
-                scheduleId, occurrence, schedule.DatabaseId, prepared.Status, next);
-            return null;
+            Skipped(scheduleId, schedule.DatabaseId, AuroraMetrics.TagValue(prepared.Status), occurrence, next);
+            return (Outcome.Skipped, null);
         }
 
         await backups.EnqueueAsync(prepared.Backup!, prepared.Job!);
+        metrics.ScheduledBackupTriggered();
         logger.LogInformation(
-            "Backup schedule {BackupScheduleId}: backup {BackupId} started for the occurrence of {Occurrence}; next run at {NextRunAt}",
-            scheduleId, prepared.Backup!.Id, occurrence, next);
-        return prepared.Job!.Id;
+            "Scheduled backup triggered: schedule {ScheduleId}, database {DatabaseId}, job {JobId}, backup {BackupId}, for the occurrence of {Occurrence}; next run at {NextRunAt}",
+            scheduleId, schedule.DatabaseId, prepared.Job!.Id, prepared.Backup!.Id, occurrence, next);
+        return (Outcome.Triggered, prepared.Job!.Id);
+    }
+
+    // The reason is one of a few fixed values: why a backup request is refused, or DatabaseBusy.
+    private void Skipped(Guid scheduleId, Guid databaseId, string reason, DateTime occurrence, DateTime? next)
+    {
+        metrics.ScheduledBackupSkipped(reason);
+        logger.LogWarning(
+            "Scheduled backup skipped: schedule {ScheduleId}, database {DatabaseId}, reason {Reason}, for the occurrence of {Occurrence}; next run at {NextRunAt}",
+            scheduleId, databaseId, reason, occurrence, next);
+    }
+
+    private enum Outcome
+    {
+        /// <summary>Nothing to do: no longer due, or dealt with by another pass.</summary>
+        NotDue,
+        Triggered,
+        Skipped
     }
 }

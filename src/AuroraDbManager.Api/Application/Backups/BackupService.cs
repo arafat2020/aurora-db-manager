@@ -143,10 +143,15 @@ public sealed class BackupService(
             return null;
         }
 
-        var totalCount = await db.Backups.CountAsync(b => b.DatabaseId == databaseId, cancellationToken);
+        var ofDatabase = db.Backups.AsNoTracking().Where(b => b.DatabaseId == databaseId);
+        if (query.StatusFilter is { } status)
+        {
+            ofDatabase = ofDatabase.Where(b => b.Status == status);
+        }
 
-        var backups = await db.Backups.AsNoTracking()
-            .Where(b => b.DatabaseId == databaseId)
+        var totalCount = await ofDatabase.CountAsync(cancellationToken);
+
+        var backups = await ofDatabase
             .OrderByDescending(b => b.CreatedAt)
             .ThenByDescending(b => b.Id)
             .Skip((query.Page - 1) * query.PageSize)

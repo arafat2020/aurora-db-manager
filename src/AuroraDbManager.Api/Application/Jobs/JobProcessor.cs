@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Domain.Jobs;
 using AuroraDbManager.Api.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,7 @@ public sealed class JobProcessor(
     IServiceScopeFactory scopeFactory,
     IOptions<JobOptions> options,
     TimeProvider timeProvider,
+    AuroraMetrics metrics,
     ILogger<JobProcessor> logger)
 {
     private DateTime UtcNow => timeProvider.GetUtcNow().UtcDateTime;
@@ -68,6 +70,12 @@ public sealed class JobProcessor(
             return;
         }
 
+        // Everything logged from here on, by the handler and what it calls included, says which job it is for.
+        using var jobScope = logger.BeginScope("Job {JobId} ({JobType})", job.Id, job.Type);
+
+        // Monotonic: the job's duration is elapsed time, not a difference of wall-clock times.
+        var started = timeProvider.GetTimestamp();
+        metrics.JobStarted(job.Type);
         logger.LogInformation(
             "Job {JobId} ({JobType}) for instance {InstanceId} started: job lease {LeaseId} acquired",
             job.Id, job.Type, job.InstanceId, leaseId);
@@ -79,10 +87,11 @@ public sealed class JobProcessor(
 
         try
         {
-            await RunAttemptsAsync(job, handler, execution.Token);
+            await RunAttemptsAsync(job, handler, started, execution.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            metrics.JobCancelled(job.Type);
             await StopRenewalAsync();
             await ReleaseInterruptedJobAsync(job, leaseId);
             throw;
@@ -90,9 +99,11 @@ public sealed class JobProcessor(
         catch (OperationCanceledException) when (execution.IsCancellationRequested)
         {
             // The renewal loop found the lease gone and has logged it; the job is someone else's now.
+            metrics.JobCancelled(job.Type);
         }
         catch (DbUpdateConcurrencyException)
         {
+            metrics.JobCancelled(job.Type);
             logger.LogWarning(
                 "Job {JobId} ({JobType}) for instance {InstanceId} abandoned: job lease {LeaseId} lost, or the job or its instance was changed or deleted concurrently",
                 job.Id, job.Type, job.InstanceId, leaseId);
@@ -109,7 +120,7 @@ public sealed class JobProcessor(
         }
     }
 
-    private async Task RunAttemptsAsync(Job job, IJobHandler handler, CancellationToken cancellationToken)
+    private async Task RunAttemptsAsync(Job job, IJobHandler handler, long started, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -122,9 +133,12 @@ public sealed class JobProcessor(
             {
                 job.Complete(UtcNow);
                 await db.SaveChangesAsync(cancellationToken);
+
+                var duration = timeProvider.GetElapsedTime(started);
+                metrics.JobCompleted(job.Type, duration);
                 logger.LogInformation(
-                    "Job {JobId} ({JobType}) for instance {InstanceId} completed on attempt {Attempt}",
-                    job.Id, job.Type, job.InstanceId, job.Attempt);
+                    "Job {JobId} ({JobType}) for instance {InstanceId} completed on attempt {Attempt} in {DurationMs} ms",
+                    job.Id, job.Type, job.InstanceId, job.Attempt, (long)duration.TotalMilliseconds);
                 return;
             }
 
@@ -135,10 +149,13 @@ public sealed class JobProcessor(
             {
                 await handler.OnFailedAsync(job, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
+
+                var duration = timeProvider.GetElapsedTime(started);
+                metrics.JobFailed(job.Type, failure.Code, duration);
                 logger.LogError(
                     failure,
-                    "Job {JobId} ({JobType}) for instance {InstanceId} failed after {Attempt} attempts: {ErrorCode}",
-                    job.Id, job.Type, job.InstanceId, job.Attempt, failure.Code);
+                    "Job {JobId} ({JobType}) for instance {InstanceId} failed after {Attempt} attempts in {DurationMs} ms: {ErrorCode}",
+                    job.Id, job.Type, job.InstanceId, job.Attempt, (long)duration.TotalMilliseconds, failure.Code);
                 return;
             }
 
@@ -148,6 +165,7 @@ public sealed class JobProcessor(
             job.StartNextAttempt(UtcNow);
             await db.SaveChangesAsync(cancellationToken);
 
+            metrics.JobRetried(job.Type);
             var retryDelay = TimeSpan.FromSeconds(options.Value.RetryDelaySeconds);
             logger.LogWarning(
                 failure,

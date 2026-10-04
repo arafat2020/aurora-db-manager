@@ -127,6 +127,20 @@ public sealed class FakeS3ObjectStore : IS3ObjectClient
         }
     }
 
+    public Task CheckBucketAsync(string bucket, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfUnavailable();
+
+        if (!Buckets.Contains(bucket))
+        {
+            throw new BackupOperationException(
+                BackupErrorCodes.BackupStorageBucketNotFound, "The backup storage bucket does not exist.");
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<S3ObjectInfo?> FindObjectAsync(string bucket, string key, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

@@ -63,7 +63,11 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasConstraintName("fk_jobs_instances_instance_id");
 
         builder.HasIndex(j => j.InstanceId).HasDatabaseName("ix_jobs_instance_id");
-        builder.HasIndex(j => j.Status).HasDatabaseName("ix_jobs_status");
+        // Status alone serves recovery and the counts of unfinished jobs; with the completion
+        // time it also serves what monitoring asks: the jobs that failed recently, newest first.
+        builder.HasIndex(j => new { j.Status, j.CompletedAt }).HasDatabaseName("ix_jobs_status_completed_at");
+        // Serves the job listing, newest first.
+        builder.HasIndex(j => j.CreatedAt).HasDatabaseName("ix_jobs_created_at");
 
         // An instance has at most one unfinished job of a type, however many processes try to create one.
         // Database jobs are left out: an instance may be working on several of its databases at once.

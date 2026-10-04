@@ -8,6 +8,12 @@ namespace AuroraDbManager.Api.Infrastructure.Backups.S3;
 /// </summary>
 public interface IS3ObjectClient
 {
+    /// <summary>
+    /// Asks the store whether the bucket is there and may be used, without reading or writing
+    /// any object. Returns if it is; throws otherwise.
+    /// </summary>
+    Task CheckBucketAsync(string bucket, CancellationToken cancellationToken);
+
     /// <summary>Returns the object's properties, or null if there is no such object.</summary>
     Task<S3ObjectInfo?> FindObjectAsync(string bucket, string key, CancellationToken cancellationToken);
 

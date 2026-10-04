@@ -174,6 +174,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
         return await scope.ServiceProvider.GetRequiredService<BackupScheduler>().RunDueAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Listens to the application's own meter, this host's and no other's: hosts of other tests
+    /// in the same process have meters of their own, and their measurements never arrive here.
+    /// </summary>
+    public MetricsRecorder RecordMetrics() => new(Services.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>());
+
     /// <summary>Runs job recovery the way the worker does at startup or at its periodic check.</summary>
     public async Task<IReadOnlyList<Guid>> RecoverJobsAsync(bool includePending)
     {
@@ -259,16 +265,22 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
                     options.ReadinessPollIntervalMilliseconds = 500;
                 });
             }
-            else if (UseDockerProvisioner)
-            {
-                services.RemoveAll<IDockerEngine>();
-                services.AddSingleton<IDockerEngine>(Docker);
-                services.Configure<DockerOptions>(options => options.ReadinessPollIntervalMilliseconds = 50);
-            }
             else
             {
-                services.RemoveAll<IInstanceProvisioner>();
-                services.AddSingleton<IInstanceProvisioner>(Provisioner);
+                // Never the real engine: an ordinary test must not reach a Docker daemon, not
+                // even for the ping of a health check.
+                services.RemoveAll<IDockerEngine>();
+                services.AddSingleton<IDockerEngine>(Docker);
+
+                if (UseDockerProvisioner)
+                {
+                    services.Configure<DockerOptions>(options => options.ReadinessPollIntervalMilliseconds = 50);
+                }
+                else
+                {
+                    services.RemoveAll<IInstanceProvisioner>();
+                    services.AddSingleton<IInstanceProvisioner>(Provisioner);
+                }
             }
 
             services.AddSingleton<ILoggerProvider>(Logs);

@@ -16,6 +16,9 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
 
     private DockerClient Client => _client.Value;
 
+    public Task PingAsync(CancellationToken cancellationToken) =>
+        InvokeAsync("ping", cancellationToken, () => Client.System.PingAsync(cancellationToken));
+
     public Task<bool> NetworkExistsAsync(string name, CancellationToken cancellationToken) =>
         InvokeAsync($"inspect network {name}", cancellationToken, async () =>
         {

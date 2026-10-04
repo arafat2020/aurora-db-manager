@@ -6,6 +6,9 @@ namespace AuroraDbManager.Api.Infrastructure.Docker;
 /// </summary>
 public interface IDockerEngine
 {
+    /// <summary>Asks the Docker Engine whether it is there. Reads nothing and changes nothing.</summary>
+    Task PingAsync(CancellationToken cancellationToken);
+
     Task<bool> NetworkExistsAsync(string name, CancellationToken cancellationToken);
 
     Task CreateNetworkAsync(string name, IReadOnlyDictionary<string, string> labels, CancellationToken cancellationToken);

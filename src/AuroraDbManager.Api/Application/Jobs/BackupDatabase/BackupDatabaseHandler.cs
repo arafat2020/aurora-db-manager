@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Domain.Databases;
 using AuroraDbManager.Api.Domain.Instances;
@@ -24,6 +25,7 @@ public sealed class BackupDatabaseHandler(
     AppDbContext db,
     IEnumerable<IBackupManager> managers,
     TimeProvider timeProvider,
+    AuroraMetrics metrics,
     ILogger<BackupDatabaseHandler> logger) : IJobHandler
 {
     public JobType Type => JobType.BackupDatabase;
@@ -56,10 +58,18 @@ public sealed class BackupDatabaseHandler(
 
         // A backup that is already running was started by an earlier attempt, or by an execution
         // that was interrupted; this attempt carries on with it.
-        if (backup.Status == BackupStatus.Pending)
+        var startedNow = backup.Status == BackupStatus.Pending;
+        if (startedNow)
         {
             backup.MarkRunning();
             await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var instance = await db.Instances.AsNoTracking().FirstOrDefaultAsync(i => i.Id == database.InstanceId, cancellationToken);
+        if (startedNow)
+        {
+            // Once per backup, however many attempts follow.
+            metrics.BackupStarted(instance?.Engine, backup.StorageType);
         }
 
         if (database.Status != DatabaseStatus.Ready)
@@ -67,8 +77,10 @@ public sealed class BackupDatabaseHandler(
             throw new JobExecutionException(BackupErrorCodes.BackupDatabaseUnavailable, "The database is not ready.");
         }
 
-        var instance = await db.Instances.AsNoTracking().FirstOrDefaultAsync(i => i.Id == database.InstanceId, cancellationToken)
-            ?? throw new JobExecutionException(BackupErrorCodes.BackupDatabaseUnavailable, "The instance no longer exists.");
+        if (instance is null)
+        {
+            throw new JobExecutionException(BackupErrorCodes.BackupDatabaseUnavailable, "The instance no longer exists.");
+        }
 
         // Not started here: an instance that stopped is retried, and fails the job if it stays down.
         if (instance.Status != InstanceStatus.Running)
@@ -80,6 +92,7 @@ public sealed class BackupDatabaseHandler(
             "Job {JobId} attempt {Attempt}: backup {BackupId} of database {DatabaseId} in {Engine} instance {InstanceId}",
             job.Id, job.Attempt, backup.Id, database.Id, instance.Engine, instance.Id);
 
+        var attemptStarted = timeProvider.GetTimestamp();
         BackupArtifact artifact;
         try
         {
@@ -91,13 +104,17 @@ public sealed class BackupDatabaseHandler(
         }
         catch (BackupOperationException exception)
         {
+            metrics.BackupAttemptFailed(instance.Engine, backup.StorageType, timeProvider.GetElapsedTime(attemptStarted));
             // Its code and message are written for clients.
             throw new JobExecutionException(exception.Code, exception.Message, exception);
         }
         catch (Exception exception)
         {
+            metrics.BackupAttemptFailed(instance.Engine, backup.StorageType, timeProvider.GetElapsedTime(attemptStarted));
             throw new JobExecutionException(BackupErrorCodes.BackupProcessFailed, "The backup failed.", exception);
         }
+
+        var attemptDuration = timeProvider.GetElapsedTime(attemptStarted);
 
         if (artifact.SizeBytes <= 0)
         {
@@ -113,6 +130,12 @@ public sealed class BackupDatabaseHandler(
 
         backup.MarkCompleted(
             artifact.Path, artifact.SizeBytes, BackupChecksumAlgorithm.Sha256, artifact.Checksum!, timeProvider.GetUtcNow().UtcDateTime);
+
+        // The artifact is stored and verified; the processor commits the backup with the job.
+        metrics.BackupCompleted(instance.Engine, backup.StorageType, attemptDuration, artifact.SizeBytes);
+        logger.LogInformation(
+            "Backup {BackupId} of database {DatabaseId} completed: {SizeBytes} bytes in {StorageType} storage, attempt took {DurationMs} ms",
+            backup.Id, database.Id, artifact.SizeBytes, backup.StorageType, (long)attemptDuration.TotalMilliseconds);
     }
 
     public async Task OnFailedAsync(Job job, CancellationToken cancellationToken)
@@ -122,10 +145,12 @@ public sealed class BackupDatabaseHandler(
         // Only a backup this job took up is this job's to fail.
         if (backup is { Status: BackupStatus.Running } && backup.DatabaseId == job.DatabaseId)
         {
-            backup.MarkFailed(
-                job.ErrorCode ?? BackupErrorCodes.BackupProcessFailed,
-                job.ErrorMessage ?? "The backup failed.",
-                timeProvider.GetUtcNow().UtcDateTime);
+            var errorCode = job.ErrorCode ?? BackupErrorCodes.BackupProcessFailed;
+            backup.MarkFailed(errorCode, job.ErrorMessage ?? "The backup failed.", timeProvider.GetUtcNow().UtcDateTime);
+
+            metrics.BackupFailed(await db.EngineOfAsync(job.InstanceId, cancellationToken), backup.StorageType, errorCode);
+            logger.LogWarning(
+                "Backup {BackupId} of database {DatabaseId} failed: {ErrorCode}", backup.Id, backup.DatabaseId, errorCode);
         }
     }
 

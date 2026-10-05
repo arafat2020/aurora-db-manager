@@ -39,6 +39,7 @@ they are only used while no administrator exists. `.env` is not committed; keep 
 | `system-db` | PostgreSQL holding Aurora's metadata. Not published outside the compose network. |
 | `migrate` | Applies the schema migrations, then exits. Runs on every `up`; a no-op when up to date. |
 | `aurora` | The application: UI, API, job worker and scheduler. |
+| `localstack` | A local stand-in for S3, with the bucket `aurora-backups`. Not published outside the compose network. |
 
 The database instances you create in Aurora are **not** compose services. Aurora creates them
 itself, as containers named `aurora-instance-<id>` on the `aurora-instances` network, through the
@@ -73,6 +74,50 @@ Everything in `.env` is described in `.env.example`. The ones most often changed
 | `AURORA_BIND` | `127.0.0.1` | Aurora listens on this machine only. |
 | `AURORA_HTTPS` | `false` | Set to `true` behind a TLS-terminating reverse proxy. |
 | `AURORA_BACKUP_STORAGE` | `local` | `s3` to store new backups in the configured bucket. |
+
+## S3 storage
+
+The S3 settings default to the `localstack` service, so this alone stores new backups in S3:
+
+```bash
+AURORA_BACKUP_STORAGE=s3
+```
+
+| Variable | Default |
+| --- | --- |
+| `AURORA_S3_BUCKET` | `aurora-backups` |
+| `AURORA_S3_REGION` | `us-east-1` |
+| `AURORA_S3_ENDPOINT` | `http://localstack:4566` |
+| `AURORA_S3_ACCESS_KEY` | `test` |
+| `AURORA_S3_SECRET_KEY` | `test` |
+| `AURORA_S3_PATH_STYLE` | `true` |
+
+To see what is in the bucket:
+
+```bash
+docker compose exec localstack awslocal s3 ls s3://aurora-backups --recursive
+```
+
+**LocalStack is for trying S3 backups out, not for keeping them.** It holds its objects in
+memory: they are gone when the container restarts, while Aurora still lists the backups, which
+then fail to restore. The bucket itself is created again on every start.
+
+For AWS or another S3-compatible service, set all six variables in `.env`. A variable set to
+nothing stays empty rather than falling back to its default, which is how the endpoint is left out
+for AWS, and the keys for the role of the machine:
+
+```bash
+AURORA_BACKUP_STORAGE=s3
+AURORA_S3_BUCKET=my-backups
+AURORA_S3_REGION=eu-west-1
+AURORA_S3_ENDPOINT=
+AURORA_S3_ACCESS_KEY=
+AURORA_S3_SECRET_KEY=
+AURORA_S3_PATH_STYLE=false
+```
+
+The `localstack` container still runs then, unused. `AURORA_LOCALSTACK_IMAGE` chooses another
+image for it.
 
 Any other setting of Aurora can be given to the `aurora` service as an environment variable, with
 `__` between the parts of its name: `Jobs__MaxConcurrency`, `Web__SessionHours`, and so on.

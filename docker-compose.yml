@@ -53,6 +53,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      localstack:
+        condition: service_started
     ports:
       # On this machine only by default. To serve other machines, put a TLS-terminating reverse
       # proxy in front (docs/security.md) rather than changing this to 0.0.0.0.
@@ -72,12 +74,15 @@ services:
       # host, so the two never claim the same network.
       Docker__NetworkName: aurora-instances
       Backups__StorageType: ${AURORA_BACKUP_STORAGE:-local}
-      Backups__S3__Bucket: ${AURORA_S3_BUCKET:-}
-      Backups__S3__Region: ${AURORA_S3_REGION:-}
-      Backups__S3__Endpoint: ${AURORA_S3_ENDPOINT:-}
-      Backups__S3__AccessKey: ${AURORA_S3_ACCESS_KEY:-}
-      Backups__S3__SecretKey: ${AURORA_S3_SECRET_KEY:-}
-      Backups__S3__PathStyle: ${AURORA_S3_PATH_STYLE:-false}
+      # S3 defaults to the LocalStack service below, so AURORA_BACKUP_STORAGE=s3 works with nothing
+      # else set. "-" rather than ":-" on purpose: a variable set to nothing in .env stays empty,
+      # which is how the endpoint and the keys are left out for AWS.
+      Backups__S3__Bucket: ${AURORA_S3_BUCKET-aurora-backups}
+      Backups__S3__Region: ${AURORA_S3_REGION-us-east-1}
+      Backups__S3__Endpoint: ${AURORA_S3_ENDPOINT-http://localstack:4566}
+      Backups__S3__AccessKey: ${AURORA_S3_ACCESS_KEY-test}
+      Backups__S3__SecretKey: ${AURORA_S3_SECRET_KEY-test}
+      Backups__S3__PathStyle: ${AURORA_S3_PATH_STYLE-true}
     volumes:
       # The Docker daemon: Aurora creates and manages the instance containers through it.
       # This is root-equivalent access to the host; see docs/security.md.
@@ -95,8 +100,38 @@ services:
       retries: 12
       start_period: 10s
 
+  # A local stand-in for S3, and what the S3 settings point at unless .env says otherwise. For
+  # trying S3 backups out, not for keeping them: this LocalStack keeps objects in memory, so
+  # they are gone when the container restarts. Not published outside the compose network.
+  localstack:
+    # A release from before LocalStack's images began to require an account; S3 needs none here.
+    image: ${AURORA_LOCALSTACK_IMAGE:-localstack/localstack:4.4.0}
+    restart: unless-stopped
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: ${AURORA_S3_REGION:-us-east-1}
+    configs:
+      # LocalStack runs what is in ready.d each time it has started: the bucket is always there.
+      - source: localstack-create-bucket
+        target: /etc/localstack/init/ready.d/create-bucket.sh
+        mode: 0755
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3api head-bucket --bucket ${AURORA_S3_BUCKET:-aurora-backups}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+configs:
+  localstack-create-bucket:
+    content: |
+      #!/bin/sh
+      awslocal s3 mb "s3://${AURORA_S3_BUCKET:-aurora-backups}"
+
 networks:
-  # Aurora and its metadata database.
+  # Aurora, its metadata database and LocalStack.
   internal:
   # Aurora and the database instances it manages. The name is fixed: it is the network Aurora
   # creates instance containers on (Docker__NetworkName).

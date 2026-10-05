@@ -1,0 +1,109 @@
+@page "/jobs/{id:guid}"
+@model AuroraDbManager.Web.Pages.Jobs.DetailsModel
+@using AuroraDbManager.Api.Domain.Jobs
+@{
+    var job = Model.Job;
+    ViewData["Title"] = $"{Labels.For(job.Type)} · Jobs";
+    var header = new PageHeader(Labels.For(job.Type), "A job: one piece of work Aurora did, or is doing, in the background.")
+    {
+        Breadcrumbs = [new Crumb("Jobs", Routes.Jobs), new Crumb(Labels.For(job.Type))],
+        Status = StatusBadge.For(job.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.InProgress)
+{
+    <partial name="_InProgress" model="@Routes.Job(job.Id)" />
+}
+
+@if (job.Error is not null)
+{
+    <partial name="_Alert" model="@(new Alert(job.Status == JobStatus.Failed ? StatusTone.Danger : StatusTone.Warning, job.Error.Message, job.Status == JobStatus.Failed ? job.Error.Code : $"The last attempt failed: {job.Error.Code}"))" />
+}
+
+<section class="section" aria-labelledby="job-title">
+    <div class="section-header">
+        <h2 id="job-title">Job</h2>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Operation</dt>
+                <dd>@Labels.For(job.Type)</dd>
+                <dt>Status</dt>
+                <dd>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(job.Status)" />
+                    <span class="muted">
+                        @(job.Status switch
+                        {
+                            JobStatus.Pending => "Waiting to be picked up.",
+                            JobStatus.Running => "Being worked on. A job stays running while it retries.",
+                            JobStatus.Completed => "Done.",
+                            _ => "Failed for good: every attempt was used."
+                        })
+                    </span>
+                </dd>
+                <dt>Attempt</dt>
+                <dd>@job.Attempt of @job.MaxAttempts</dd>
+                @if (job.Error is not null)
+                {
+                    <dt>Error</dt>
+                    <dd><code>@job.Error.Code</code></dd>
+                    <dt>Message</dt>
+                    <dd>@job.Error.Message</dd>
+                }
+                <dt>Created</dt>
+                <dd><partial name="_Time" model="@((DateTime?)job.CreatedAt)" /></dd>
+                <dt>Started</dt>
+                <dd><partial name="_Time" model="@job.StartedAt" /></dd>
+                <dt>Finished</dt>
+                <dd><partial name="_Time" model="@job.CompletedAt" /></dd>
+                <dt>Last changed</dt>
+                <dd><partial name="_Time" model="@((DateTime?)job.UpdatedAt)" /></dd>
+                <dt>Instance</dt>
+                <dd>
+                    @if (Model.Instance is not null)
+                    {
+                        <a href="@Url.Content("~" + Routes.Instance(job.InstanceId))">@Model.Instance.Name</a>
+                        <span class="muted">@Labels.For(Model.Instance.Engine) @Model.Instance.Version</span>
+                    }
+                    else
+                    {
+                        <span class="muted">No longer exists</span>
+                    }
+                </dd>
+                @if (job.DatabaseId is { } databaseId)
+                {
+                    <dt>Database</dt>
+                    <dd>
+                        @if (Model.Database is not null)
+                        {
+                            <a class="mono" href="@Url.Content("~" + Routes.Database(job.InstanceId, databaseId))">@Model.Database.Name</a>
+                        }
+                        else
+                        {
+                            <span class="muted">No longer exists</span>
+                        }
+                    </dd>
+                    @if (job.BackupId is { } backupId && Model.Database is not null)
+                    {
+                        <dt>Backup</dt>
+                        <dd><a href="@Url.Content("~" + Routes.Backup(job.InstanceId, databaseId, backupId))">@(job.Type == JobType.RestoreDatabase ? "The backup that was restored" : "The backup that was made")</a></dd>
+                    }
+                }
+                <dt>ID</dt>
+                <dd class="mono">@job.Id</dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<p class="table-note">
+    <a href="~/jobs">All jobs</a>
+    · <a href="@Url.Content("~" + Routes.JobsOfInstance(job.InstanceId))">Jobs of this instance</a>
+    @if (job.DatabaseId is { } ofDatabase)
+    {
+        <text>· <a href="@Url.Content("~" + Routes.JobsOfDatabase(ofDatabase))">Jobs of this database</a></text>
+    }
+</p>

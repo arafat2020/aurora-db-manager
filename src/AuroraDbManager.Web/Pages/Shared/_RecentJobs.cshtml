@@ -10,6 +10,7 @@
                 <th scope="col">Attempt</th>
                 <th scope="col">Created</th>
                 <th scope="col">Finished</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
         </thead>
         <tbody>
@@ -27,6 +28,7 @@
                     <td>@job.Attempt of @job.MaxAttempts</td>
                     <td><partial name="_Time" model="@((DateTime?)job.CreatedAt)" /></td>
                     <td><partial name="_Time" model="@job.CompletedAt" /></td>
+                    <td class="cell-actions"><a class="button button-quiet" href="@Url.Content("~" + Routes.Job(job.Id))">Details<span class="visually-hidden"> of this job</span></a></td>
                 </tr>
             }
         </tbody>

@@ -103,7 +103,7 @@
                             <td class="cell-primary">@Labels.For(failure.Type)</td>
                             <td><code>@failure.ErrorCode</code></td>
                             <td><partial name="_Time" model="@((DateTime?)failure.FailedAt)" /></td>
-                            <td class="mono">@failure.JobId</td>
+                            <td class="mono"><a href="@Url.Content("~" + Routes.Job(failure.JobId))">@failure.JobId</a></td>
                         </tr>
                     }
                 </tbody>

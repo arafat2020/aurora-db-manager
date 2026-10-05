@@ -61,7 +61,8 @@ public sealed record Pager(string Path, int Page, int PageSize, int ShownCount, 
 
     public string? NextPath => (long)Page * PageSize < TotalCount ? PathOf(Page + 1) : null;
 
-    private string PathOf(int page) => page == 1 ? Path : $"{Path}?page={page}";
+    // The address of a list may carry its filters; the page is added to them.
+    private string PathOf(int page) => page == 1 ? Path : $"{Path}{(Path.Contains('?', StringComparison.Ordinal) ? '&' : '?')}page={page}";
 }
 
 /// <summary>What a page shows where its content would be when there is none.</summary>

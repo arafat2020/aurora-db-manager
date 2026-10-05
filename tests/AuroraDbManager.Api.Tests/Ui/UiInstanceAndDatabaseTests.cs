@@ -165,7 +165,7 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         Assert.Contains("<dt>Storage</dt> <dd>20 GB</dd>", details, StringComparison.Ordinal);
         Assert.Contains($"<dd class=\"mono\">{instanceId}</dd>", details, StringComparison.Ordinal);
         Assert.Contains("<td class=\"cell-primary\">Provision instance</td>", details, StringComparison.Ordinal);
-        Assert.Contains("href=\"/jobs\"", details, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/jobs?instanceId={instanceId}\"", details, StringComparison.Ordinal);
         // Nothing a viewer could not do is offered.
         Assert.DoesNotContain("Delete", details, StringComparison.Ordinal);
         Assert.DoesNotContain("Create database", details, StringComparison.Ordinal);

@@ -361,6 +361,35 @@ See [ui.md](ui.md#backups-and-restores).
 
 ---
 
+# ⏱️ Phase 15 — Scheduling & Monitoring UI
+
+## Objectives
+
+* Make backup schedules, the job history and monitoring usable from the UI
+
+## Tasks
+
+* [x] A database's backup schedule under `/instances/{id}/databases/{databaseId}/schedule`: view, create, edit, enable/disable, delete
+* [x] Cron and time zone validated by the schedule service; next run shown as the service calculated it
+* [x] `/jobs` with the service's filters and paging, and `/jobs/{id}`
+* [x] `/monitoring`: health checks, scheduler, activity, recent failures
+* [x] Instance health on the database page
+* [x] Operators and administrators change schedules; everyone signed in may look
+
+## Output
+
+* Schedules managed, jobs inspected and the installation's state read from the UI, through the existing services
+
+## Not included
+
+* A "last scheduled backup": nothing on record marks a backup as scheduled
+* Health of a single database, a health status of the scheduler, charts, live updates
+* Starting, retrying or cancelling jobs
+
+See [ui.md](ui.md#backup-schedules).
+
+---
+
 # 🚫 What NOT to Build (Yet)
 
 Avoid these early:

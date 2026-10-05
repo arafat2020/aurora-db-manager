@@ -853,6 +853,45 @@ a.stat:hover {
   overflow-wrap: anywhere;
 }
 
+/* The filters of a list: a few short fields and a button, side by side while there is room. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.filters .field {
+  min-width: 11rem;
+}
+
+/* When what a page shows was read, and the way to read it again. */
+.as-of {
+  margin-bottom: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* A checkbox with its label next to it. */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.schedule-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.section-actions form {
+  display: inline-flex;
+}
+
 .subheading {
   color: var(--text-muted);
   font-size: var(--text-xs);

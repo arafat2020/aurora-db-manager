@@ -35,6 +35,12 @@ public static class Offered
     public static bool RestoreBackup(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database, BackupResponse backup) =>
         CreateBackup(user, instance, database) && backup.Status == BackupStatus.Completed;
 
+    /// <summary>A schedule is given only to a database that could be backed up now; one that exists can be changed or removed whenever.</summary>
+    public static bool CreateSchedule(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database) =>
+        CreateBackup(user, instance, database);
+
+    public static bool ChangeSchedule(ClaimsPrincipal user) => user.IsOperator();
+
     public static bool DeleteDatabase(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database) =>
         user.IsOperator() && instance.Status == InstanceStatus.Running && database.Status == DatabaseStatus.Ready;
 }

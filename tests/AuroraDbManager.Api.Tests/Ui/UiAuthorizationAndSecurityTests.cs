@@ -66,7 +66,7 @@ public sealed partial class UiAuthorizationAndSecurityTests : IDisposable
 
     // --- Navigation and pages, by role ---------------------------------------------------------
 
-    private static readonly string[] Sections = ["Overview", "Instances", "Schedules", "Jobs", "Monitoring"];
+    private static readonly string[] Sections = ["Overview", "Instances", "Jobs", "Monitoring"];
 
     [Theory]
     [InlineData("viewer")]
@@ -134,7 +134,6 @@ public sealed partial class UiAuthorizationAndSecurityTests : IDisposable
     [Theory]
     [InlineData("/", "Overview")]
     [InlineData("/instances", "Instances")]
-    [InlineData("/schedules", "Schedules")]
     [InlineData("/jobs", "Jobs")]
     [InlineData("/monitoring", "Monitoring")]
     public async Task EverySection_RendersForAViewer_WithItsTitle_ItsPlaceInTheNavigation_AndTheLayout(string path, string title)

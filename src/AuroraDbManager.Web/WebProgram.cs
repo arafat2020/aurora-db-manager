@@ -40,6 +40,7 @@ public sealed class WebProgram
         builder.Services.AddRazorPages();
         builder.Services.AddScoped<DashboardReader>();
         builder.Services.AddScoped<BackupActivity>();
+        builder.Services.AddScoped<MonitoringReader>();
         builder.Services.AddOptions<AntiforgeryOptions>()
             .Configure<IOptions<SecurityOptions>, IHostEnvironment>((antiforgery, security, environment) =>
             {

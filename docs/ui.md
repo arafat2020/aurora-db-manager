@@ -142,12 +142,13 @@ The UI uses the roles and the policies the API uses (`AuroraPolicies`); it has n
 
 | Section | viewer | operator | admin |
 | --- | :---: | :---: | :---: |
-| Overview, Instances, Schedules, Jobs, Monitoring | ✔ | ✔ | ✔ |
+| Overview, Instances, Jobs, Monitoring | ✔ | ✔ | ✔ |
 | Users | | | ✔ |
 
 What each role may do with instances and databases is in
-[Instances and databases](#who-may-do-what), and with backups in
-[Backups and restores](#backups-and-restores).
+[Instances and databases](#who-may-do-what), with backups in
+[Backups and restores](#backups-and-restores), and with schedules in
+[Backup schedules](#backup-schedules).
 
 ## Project structure
 
@@ -179,9 +180,11 @@ src/AuroraDbManager.Web/
 │   ├── Login / Logout / Error
 │   ├── Instances/                 list, create, details, delete, external access
 │   │   └── Databases/             an instance's databases: list, create, details, delete
-│   │       └── Backups/           a database's backups: list, create, details, restore
-│   ├── Jobs, Users                read-only lists
-│   ├── Schedules, Monitoring      placeholders
+│   │       ├── Backups/           a database's backups: list, create, details, restore
+│   │       └── Schedule/          a database's backup schedule: view, create/edit, enable/disable, delete
+│   ├── Jobs/                      the job history, filtered and paged, and one job
+│   ├── Monitoring/                health, scheduler, activity, recent failures
+│   ├── Users                      a read-only list
 │   └── Styleguide.cshtml          every building block (development only)
 └── wwwroot/
     ├── css/aurora.css
@@ -538,9 +541,152 @@ of an endpoint.
 - **Deleting a backup.** The application has no such operation, so there is no button for it.
 - **Restoring into another database**, downloading a backup, or uploading one.
 - **Choosing the storage** of a new backup. It is the server's setting.
-- **Schedules** and a cross-database backup overview; they belong to later phases.
+- A cross-database backup overview. Schedules are in [Backup schedules](#backup-schedules).
 - *Operations on this backup* lists what is among the database's 50 most recent jobs. Older ones
   are in *Jobs*.
+
+## Backup schedules
+
+A database can have one backup schedule, and its page is the database's:
+`/instances/{id}/databases/{databaseId}/schedule`. It is reached from the *Backups* section of
+the database's page, which also shows the schedule in a line. There is no top-level *Schedules*
+section and no list of schedules: a database has a schedule or it has none.
+
+The pages are a presentation of `BackupScheduleService`, the service behind
+`/api/v1/databases/{id}/backup-schedule`. Its calculator reads cron expressions and time zones
+and says when a schedule next runs; the scheduler acts on that. The pages parse nothing,
+calculate nothing and start nothing.
+
+### Pages
+
+| Address | Page | Reads and calls |
+| --- | --- | --- |
+| `…/schedule` | The schedule, or that there is none | `BackupScheduleService.GetAsync` |
+| `…/schedule/edit` | The form that creates the schedule or changes it; and the enable and disable actions | `CreateAsync`, `UpdateAsync` |
+| `…/schedule/delete` | The question, and the form that deletes | `DeleteAsync` |
+
+(`…` is `/instances/{id}/databases/{databaseId}`.)
+
+### Who may do what
+
+| | viewer | operator | admin |
+| --- | :---: | :---: | :---: |
+| See the schedule | ✔ | ✔ | ✔ |
+| Create, edit, enable, disable, delete | | ✔ | ✔ |
+
+The edit and delete pages carry the operator policy of the API's endpoints, for their forms and
+for the enable and disable actions alike.
+
+### What the schedule page shows
+
+The database and its instance; whether the schedule is **Enabled** or **Disabled**; the cron
+expression; the time zone; the next run; when it was created and last updated; its ID.
+
+- **Next run** is the `nextRunAt` on the schedule's record, which the service calculated. It is
+  shown as the instant, in UTC, and next to it as the clock of the schedule's time zone shows it:
+  *2026-10-05 18:00 UTC, which is 2026-10-06 00:00 in Asia/Dhaka*. The second is the same instant
+  written differently, not a calculation of when the schedule runs.
+- A **disabled** schedule has no next run, and the page says *Disabled* there.
+- *Last updated* is also when the schedule last moved on to its next run, because that is what
+  the record holds.
+- **There is no "last scheduled backup".** A backup the schedule causes is an ordinary backup
+  with an ordinary job; nothing on record tells it from one asked for by hand. The page links to
+  the database's backups and jobs instead of guessing.
+
+### Creating and editing
+
+One form, with the three fields the service's request has:
+
+- **Cron expression.** Five fields: minute, hour, day of month, month, day of week, with examples
+  next to the field. The page does not check it. `BackupScheduleService` does, and what it
+  refuses comes back at the field with the API's sentence (`422`), with what was typed kept.
+  Nothing in the browser parses cron.
+- **Time zone.** The IANA name of the zone the expression is read in, typed into a text field
+  that suggests the names the server knows and the calculator accepts. It is never taken from
+  the browser or from the server's own zone; what is written is what the schedule runs by.
+  Anything the calculator does not accept is refused at the field.
+- **Enabled.** On for a new schedule.
+
+Creating leads to the schedule's page with *Backup schedule created.*; editing, with *Backup
+schedule updated.* and the next run worked out anew by the service. The edit form starts from
+what the schedule says. Saving a schedule backs nothing up, and no page says it did: the first
+run is the next occurrence after now. A schedule is only given to a database that could be
+backed up now; otherwise the service refuses with `DATABASE_NOT_READY` or `INSTANCE_NOT_READY`
+(`409`).
+
+### Enabling and disabling
+
+The service has no operation that only enables or disables; a request states the whole
+schedule. The *Enable schedule* and *Disable schedule* buttons therefore send the schedule back
+as it is, with that one value changed, through `UpdateAsync`. Disabling keeps the schedule and
+leaves it without a next run. Enabling starts it from the next occurrence after that moment; an
+occurrence that passed while it was disabled is not made up for. The page never writes a next
+run itself.
+
+### Deleting
+
+*Delete schedule* leads to a page that names the database, shows the schedule, and says what
+follows: automatic backups of the database stop, existing backups are kept, a backup that is
+running is not stopped, and that disabling pauses a schedule without removing it. Only its form,
+a `POST` with an antiforgery token, deletes.
+
+## Jobs
+
+`/jobs` is the job history, as `JobService` lists it for `/api/v1/jobs`: one page at a time,
+newest first.
+
+- **Columns:** the operation (a link to the job), its status with the stable error code of a
+  failed job, the attempt, when it was created, started and finished, and what it worked on, as
+  links to the instance, the database and the backup.
+- **Filters:** status and operation, as two selects, and instance and database through the
+  address (`?instanceId=…`, `?databaseId=…`), which is how the *All jobs of this instance* and
+  *All jobs of this database* links on those pages arrive. They are the filters the service has,
+  under the names the API takes, in any combination. The form is a `GET`: the address is the
+  query, and paging keeps it. Nothing is filtered in the browser, and nothing is loaded that is
+  not shown.
+- **Paging** is the service's: 20 to a page, `?page=2`. A status or operation the application
+  does not have, an id that is not one, and a page that is not a page are refused with the `400`
+  page, as the API refuses them.
+- No jobs at all, no jobs matching the filters, and a page past the last one each say so.
+
+`/jobs/{id}` is one job: the operation, status, attempt, times, the instance and database by
+name with links (or *No longer exists*), the backup it made or restored, and its ID. A failed
+job shows the stable **error code** and the **message** the application recorded for clients,
+and nothing else: no exception, no output of a tool, no path. A job that is pending or running
+has the *Work is in progress* line and reloads like the other pages.
+
+Jobs cannot be started, retried or cancelled from here; the application has no such operations.
+
+## Monitoring
+
+`/monitoring` is the state of the installation in more detail than the overview. It is read
+from what monitoring already provides and from nothing else: `MonitoringSummaryService` (the
+summary behind `/api/v1/monitoring/summary`) and the application's own `HealthCheckService`
+(the checks behind `/health/ready` and `/health/storage`). No page pings Docker, connects to a
+database, or counts rows.
+
+| Section | Shows | From |
+| --- | --- | --- |
+| Health | *Aurora* (readiness), *System database*, *Docker*, *S3 backup storage* | the health checks |
+| Backup scheduler | whether any schedule is overdue, enabled schedules, the earliest next run, the last pass | the summary's scheduler part |
+| Activity | instances by status; jobs, backups and restores pending, running and failed recently | the summary |
+| Recent failures | the latest failed jobs with their stable codes, linked to the job and to what it worked on | the summary |
+
+- **Health** uses the checks' own statuses: *Healthy*, *Degraded*, *Unhealthy*. Docker being
+  unreachable is *Degraded*, as readiness has it. A check that does not apply to this server (S3
+  when backups are local) says *Not in use*. Why a check failed is in the server's log, not on
+  the page. Opening the page runs the S3 check, which is one request to the object store.
+- **The scheduler** has no health status of its own in the application, and the page does not
+  make one up. It shows what the summary has: *On time* or *N overdue* (the summary's own notion
+  of overdue), and the last pass, which is kept in memory and so is *None since this process
+  started* until the scheduler of this process has made one.
+- **Instance health** is not on this page: finding it out means asking each instance's server.
+  It is on each instance's page, and each database's page shows the health of its instance, said
+  to be that. The application has no health check of a single database.
+- The page is as of the moment it was rendered, with a **Refresh** link. It does not reload
+  itself.
+
+The overview (`/`) is unchanged but for its recent failures now linking to their jobs.
 
 ## Styling
 
@@ -678,8 +824,5 @@ stylesheet and script (pre-compressed). No Node, no asset pipeline, no separate 
 
 Each of these builds on the shell, the components and the rules above:
 
-- backup schedules
-- jobs: filtering, paging, detail
-- the monitoring dashboard
 - user administration
 - live updates for long-running work

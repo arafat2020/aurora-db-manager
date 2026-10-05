@@ -144,8 +144,8 @@ public sealed class UiSmokeTests : IDisposable
 
         var html = Flat(await _browser.GetHtmlAsync("/jobs"));
 
-        Assert.Equal(20, System.Text.RegularExpressions.Regex.Matches(html, "<td class=\"cell-primary\">Provision instance</td>").Count);
-        Assert.Contains("Showing the 20 most recent of 23.", html, StringComparison.Ordinal);
+        Assert.Equal(20, System.Text.RegularExpressions.Regex.Matches(html, "<td class=\"cell-primary\"><a href=\"/jobs/[0-9a-f-]{36}\">Provision instance</a></td>").Count);
+        Assert.Contains("Showing 1–20 of 23.", html, StringComparison.Ordinal);
         Assert.Matches("<span class=\"badge badge-progress\"><svg.*?</svg> Pending</span>", html);
     }
 
@@ -161,22 +161,6 @@ public sealed class UiSmokeTests : IDisposable
         Assert.DoesNotContain("<script>alert(1)</script>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<img src=x", html, StringComparison.Ordinal);
         Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", html, StringComparison.Ordinal);
-    }
-
-    // --- Sections that are still to come -------------------------------------------------------
-
-    [Theory]
-    [InlineData("/schedules", "/api/v1/databases/{id}/backup-schedule")]
-    [InlineData("/monitoring", "/api/v1/monitoring/summary")]
-    public async Task SectionThatIsNotBuiltYet_SaysSo_AndPointsToTheApiThatDoesItToday(string path, string api)
-    {
-        await _browser.SignInAsync();
-
-        var html = await _browser.GetHtmlAsync(path);
-
-        Assert.Contains("in a later release", html, StringComparison.Ordinal);
-        Assert.Contains(api, html, StringComparison.Ordinal);
-        Assert.Contains("class=\"state\"", html, StringComparison.Ordinal);
     }
 
     // --- The building blocks -------------------------------------------------------------------

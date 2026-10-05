@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -75,6 +76,33 @@ public static class Rejections
             ErrorCodes.RestoreOperationInProgress, "The database is already being restored."),
         CreateRestoreStatus.BackupInProgress => Conflict(
             ErrorCodes.BackupOperationInProgress, "The database cannot be restored while it is being backed up."),
+        _ => null
+    };
+
+    /// <summary>
+    /// Why a schedule was not created or changed, for every outcome that is the state of things
+    /// rather than of what was typed. What was typed, a cron expression or a time zone the
+    /// calculator does not accept, is said at its field: see <see cref="ScheduleFieldError"/>.
+    /// </summary>
+    public static Rejection? For(BackupScheduleStatus status) => status switch
+    {
+        BackupScheduleStatus.AlreadyExists => Conflict(
+            ErrorCodes.BackupScheduleAlreadyExists, "The database already has a backup schedule."),
+        BackupScheduleStatus.DatabaseNotReady => Conflict(
+            ErrorCodes.DatabaseNotReady, "Only a ready database can be given a backup schedule."),
+        BackupScheduleStatus.InstanceNotReady => Conflict(ErrorCodes.InstanceNotReady, "Backup schedules need a running instance."),
+        _ => null
+    };
+
+    /// <summary>The field a schedule request was refused for, and the sentence the API answers the same refusal with.</summary>
+    public static (string Field, string Message)? ScheduleFieldError(BackupScheduleStatus status) => status switch
+    {
+        BackupScheduleStatus.InvalidCronExpression => (
+            nameof(BackupScheduleRequest.CronExpression),
+            "cronExpression must be a cron expression of five fields: minute, hour, day of month, month, day of week."),
+        BackupScheduleStatus.InvalidTimeZone => (
+            nameof(BackupScheduleRequest.TimeZoneId),
+            "timeZoneId must be the IANA name of a time zone, such as 'Asia/Dhaka' or 'UTC'."),
         _ => null
     };
 

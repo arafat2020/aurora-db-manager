@@ -58,6 +58,18 @@
                     <a href="@Url.Content("~" + Routes.Instance(instance.Id))">@instance.Name</a>
                     <partial name="_StatusBadge" model="@StatusBadge.For(instance.Status)" />
                 </dd>
+                <dt>Instance health</dt>
+                <dd>
+                    @if (Model.InstanceHealth is { } health)
+                    {
+                        <partial name="_StatusBadge" model="@StatusBadge.For(health.Status)" />
+                        <span class="muted">@Labels.For(health) This is the health of the server the database is in; a single database has no check of its own.</span>
+                    }
+                    else
+                    {
+                        <span class="muted">Not available</span>
+                    }
+                </dd>
                 <dt>Engine</dt>
                 <dd>@Labels.For(instance.Engine) @instance.Version</dd>
                 <dt>Created</dt>
@@ -108,6 +120,25 @@
             }
         </span>
     </div>
+    <p class="schedule-summary">
+        <strong>Schedule:</strong>
+        @if (Model.Schedule is { } schedule)
+        {
+            <partial name="_StatusBadge" model="@StatusBadge.ForEnabled(schedule.Enabled)" />
+            <code>@schedule.CronExpression</code>
+            <span class="mono">@schedule.TimeZoneId</span>
+            @if (schedule.NextRunAt is not null)
+            {
+                <span class="muted">· next run <partial name="_Time" model="@schedule.NextRunAt" /></span>
+            }
+            <a href="@Url.Content("~" + Routes.Schedule(instance.Id, database.Id))">View schedule</a>
+        }
+        else
+        {
+            <span class="muted">No backup schedule configured.</span>
+            <a href="@Url.Content("~" + Routes.Schedule(instance.Id, database.Id))">Backup schedule</a>
+        }
+    </p>
     @if (Model.Backups.TotalCount == 0)
     {
         <partial name="_EmptyState" model="@(new EmptyState("No backups yet", Offered.CreateBackup(User, instance, database)
@@ -127,7 +158,7 @@
 <section class="section" aria-labelledby="operations-title">
     <div class="section-header">
         <h2 id="operations-title">Recent operations</h2>
-        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+        <span class="section-note"><a href="@Url.Content("~" + Routes.JobsOfDatabase(database.Id))">All jobs of this database</a></span>
     </div>
     @if (Model.Jobs.Items.Count == 0)
     {

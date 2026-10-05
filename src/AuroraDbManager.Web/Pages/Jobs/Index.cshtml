@@ -1,16 +1,85 @@
 @page "/jobs"
 @model AuroraDbManager.Web.Pages.Jobs.IndexModel
+@using AuroraDbManager.Api.Domain.Jobs
 @{
     ViewData["Title"] = "Jobs";
 }
 <partial name="_PageHeader" model="@(new PageHeader("Jobs", "Everything this installation did in the background: provisioning, databases, backups and restores."))" />
 
-@if (Model.Jobs.Items.Count == 0)
+<form method="get" class="filters" aria-label="Filter jobs">
+    <div class="field">
+        <label class="field-label" for="filter-status">Status</label>
+        <select class="select" id="filter-status" name="status">
+            <option value="">Any status</option>
+            @foreach (var status in Enum.GetValues<JobStatus>())
+            {
+                <option value="@Labels.ApiValue(status)" selected="@(Model.Query.Status == Labels.ApiValue(status))">@StatusBadge.For(status).Label</option>
+            }
+        </select>
+    </div>
+    <div class="field">
+        <label class="field-label" for="filter-type">Operation</label>
+        <select class="select" id="filter-type" name="type">
+            <option value="">Any operation</option>
+            @foreach (var type in Enum.GetValues<JobType>())
+            {
+                <option value="@Labels.ApiValue(type)" selected="@(Model.Query.Type == Labels.ApiValue(type))">@Labels.For(type)</option>
+            }
+        </select>
+    </div>
+    @* The instance or database the list is narrowed to stays in the address when the other filters change. *@
+    @if (Model.Query.InstanceId is { } filterInstance)
+    {
+        <input type="hidden" name="instanceId" value="@filterInstance.ToString("D")" />
+    }
+    @if (Model.Query.DatabaseId is { } filterDatabase)
+    {
+        <input type="hidden" name="databaseId" value="@filterDatabase.ToString("D")" />
+    }
+    <div class="form-actions">
+        <button type="submit" class="button">Filter</button>
+        @if (Model.Filtered)
+        {
+            <a class="button button-quiet" href="~/jobs">Clear filters</a>
+        }
+    </div>
+</form>
+
+@if (Model.Query.InstanceId is not null || Model.Query.DatabaseId is not null)
 {
-    <partial name="_EmptyState" model="@(new EmptyState("No jobs yet", "A job appears here whenever an instance is provisioned, a database is created or deleted, or a backup is made or restored.", "jobs"))" />
+    <p class="table-note">
+        @if (Model.Query.DatabaseId is { } ofDatabase)
+        {
+            <text>Showing the jobs of database <span class="mono">@ofDatabase</span>.</text>
+        }
+        else if (Model.Query.InstanceId is { } ofInstance)
+        {
+            <text>Showing the jobs of <a href="@Url.Content("~" + Routes.Instance(ofInstance))">instance <span class="mono">@ofInstance</span></a>.</text>
+        }
+    </p>
+}
+
+@if (Model.Jobs.TotalCount == 0)
+{
+    @if (Model.Filtered)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No jobs match", "No job matches these filters.", "search", new PageAction("Clear filters", Routes.Jobs, ActionTone.Plain)))" />
+    }
+    else
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No jobs have been recorded yet", "A job appears here whenever an instance is provisioned, a database is created or deleted, or a backup is made or restored.", "jobs"))" />
+    }
+}
+else if (Model.Jobs.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("Nothing on this page", $"There are {Model.Jobs.TotalCount} jobs, and this page is past the last of them.", "search", new PageAction("Back to the first page", Model.FilteredPath, ActionTone.Plain)))" />
 }
 else
 {
+    @if (Model.InProgress)
+    {
+        <partial name="_InProgress" model="@Model.FilteredPath" />
+    }
     <div class="table-wrap">
         <table class="table">
             <caption>Jobs, newest first</caption>
@@ -20,15 +89,16 @@ else
                     <th scope="col">Status</th>
                     <th scope="col">Attempt</th>
                     <th scope="col">Created</th>
+                    <th scope="col">Started</th>
                     <th scope="col">Finished</th>
-                    <th scope="col">Job</th>
+                    <th scope="col">Worked on</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var job in Model.Jobs.Items)
                 {
                     <tr>
-                        <td class="cell-primary">@Labels.For(job.Type)</td>
+                        <td class="cell-primary"><a href="@Url.Content("~" + Routes.Job(job.Id))">@Labels.For(job.Type)</a></td>
                         <td>
                             <partial name="_StatusBadge" model="@StatusBadge.For(job.Status)" />
                             @if (job.Error is not null)
@@ -38,12 +108,23 @@ else
                         </td>
                         <td>@job.Attempt of @job.MaxAttempts</td>
                         <td><partial name="_Time" model="@((DateTime?)job.CreatedAt)" /></td>
+                        <td><partial name="_Time" model="@job.StartedAt" /></td>
                         <td><partial name="_Time" model="@job.CompletedAt" /></td>
-                        <td class="mono">@job.Id</td>
+                        <td>
+                            <a href="@Url.Content("~" + Routes.Instance(job.InstanceId))">Instance</a>
+                            @if (job.DatabaseId is { } databaseId)
+                            {
+                                <text>· <a href="@Url.Content("~" + Routes.Database(job.InstanceId, databaseId))">Database</a></text>
+                                @if (job.BackupId is { } backupId)
+                                {
+                                    <text>· <a href="@Url.Content("~" + Routes.Backup(job.InstanceId, databaseId, backupId))">Backup</a></text>
+                                }
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-    <p class="table-note">Showing the @Model.Jobs.Items.Count most recent of @Model.Jobs.TotalCount.</p>
+    <partial name="_Pager" model="@(new Pager(Model.FilteredPath, Model.Jobs.Page, Model.Jobs.PageSize, Model.Jobs.Items.Count, Model.Jobs.TotalCount))" />
 }

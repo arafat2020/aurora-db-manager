@@ -6,6 +6,14 @@ public static class Routes
     public const string Instances = "/instances";
     public const string CreateInstance = "/instances/create";
     public const string Jobs = "/jobs";
+    public const string Monitoring = "/monitoring";
+
+    public static string Job(Guid id) => $"/jobs/{id:D}";
+
+    /// <summary>The jobs of one instance, or of one database: the list, narrowed by the filter the job service has for it.</summary>
+    public static string JobsOfInstance(Guid instanceId) => $"/jobs?instanceId={instanceId:D}";
+
+    public static string JobsOfDatabase(Guid databaseId) => $"/jobs?databaseId={databaseId:D}";
 
     public static string Instance(Guid id) => $"/instances/{id:D}";
 
@@ -20,6 +28,12 @@ public static class Routes
     public static string Database(Guid instanceId, Guid databaseId) => $"{Databases(instanceId)}/{databaseId:D}";
 
     public static string DeleteDatabase(Guid instanceId, Guid databaseId) => $"{Database(instanceId, databaseId)}/delete";
+
+    public static string Schedule(Guid instanceId, Guid databaseId) => $"{Database(instanceId, databaseId)}/schedule";
+
+    public static string EditSchedule(Guid instanceId, Guid databaseId) => $"{Schedule(instanceId, databaseId)}/edit";
+
+    public static string DeleteSchedule(Guid instanceId, Guid databaseId) => $"{Schedule(instanceId, databaseId)}/delete";
 
     public static string Backups(Guid instanceId, Guid databaseId) => $"{Database(instanceId, databaseId)}/backups";
 

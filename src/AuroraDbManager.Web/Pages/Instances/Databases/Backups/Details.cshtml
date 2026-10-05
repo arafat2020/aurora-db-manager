@@ -148,7 +148,7 @@ else if (Model.RestoreCompleted is { CompletedAt: { } restoredAt })
 <section class="section" aria-labelledby="operations-title">
     <div class="section-header">
         <h2 id="operations-title">Operations on this backup</h2>
-        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+        <span class="section-note"><a href="@Url.Content("~" + Routes.JobsOfDatabase(database.Id))">All jobs of this database</a></span>
     </div>
     @if (Model.Operations.Count == 0)
     {

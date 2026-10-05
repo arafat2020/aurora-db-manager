@@ -1,0 +1,76 @@
+@page "/instances/{id:guid}/databases/{databaseId:guid}/schedule/edit"
+@model AuroraDbManager.Web.Pages.Instances.Databases.Schedule.EditModel
+@using AuroraDbManager.Api.Domain.BackupSchedules
+@using AuroraDbManager.Api.Domain.Databases
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    var instance = Model.Instance;
+    var database = Model.Database;
+    var creating = Model.Existing is null;
+    var title = creating ? "Create backup schedule" : "Edit backup schedule";
+    ViewData["Title"] = $"{title} · {database.Name}";
+    var header = new PageHeader(title, $"When the database {database.Name}, in {instance.Name}, is backed up by itself.")
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb(database.Name, Routes.Database(instance.Id, database.Id)),
+            new Crumb("Backup schedule", Routes.Schedule(instance.Id, database.Id)), new Crumb(creating ? "Create" : "Edit")
+        ]
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Problem is not null)
+{
+    <partial name="_Alert" model="@Model.Problem" />
+}
+else if (creating && (instance.Status != InstanceStatus.Running || database.Status != DatabaseStatus.Ready))
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Warning, "A schedule can be given only to a ready database in a running instance.", $"The database is {StatusBadge.For(database.Status).Label.ToLowerInvariant()}, its instance is {StatusBadge.For(instance.Status).Label.ToLowerInvariant()}"))" />
+}
+
+<div class="card form-card">
+    <div class="card-body">
+        <form method="post" class="form">
+            <div asp-validation-summary="ModelOnly" class="field-error" role="alert"></div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.CronExpression">Cron expression <span class="field-required" aria-hidden="true">*</span></label>
+                <input class="input mono" asp-for="Input.CronExpression" maxlength="@BackupSchedule.CronExpressionMaxLength" aria-describedby="cron-hint" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="0 0 * * *" required />
+                <span class="field-hint" id="cron-hint">
+                    Five fields: minute, hour, day of month, month, day of week. For example
+                    <code>0 0 * * *</code> is every day at midnight, <code>30 2 * * 0</code> every Sunday at 02:30, <code>0 */6 * * *</code> every six hours.
+                    The server checks the expression when the schedule is saved.
+                </span>
+                <span class="field-error" asp-validation-for="Input.CronExpression"></span>
+            </div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.TimeZoneId">Time zone <span class="field-required" aria-hidden="true">*</span></label>
+                <input class="input mono" asp-for="Input.TimeZoneId" maxlength="@BackupSchedule.TimeZoneIdMaxLength" list="time-zones" aria-describedby="zone-hint" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="UTC" required />
+                <datalist id="time-zones">
+                    @foreach (var zone in Model.TimeZones)
+                    {
+                        <option value="@zone"></option>
+                    }
+                </datalist>
+                <span class="field-hint" id="zone-hint">
+                    The IANA name of the time zone the expression is read in, such as <code>UTC</code>, <code>Asia/Dhaka</code> or <code>Europe/Berlin</code>.
+                    It is never taken from your browser or from the server: the schedule runs by the clock of the zone written here.
+                </span>
+                <span class="field-error" asp-validation-for="Input.TimeZoneId"></span>
+            </div>
+            <div class="field">
+                <label class="check">
+                    <input type="checkbox" name="Input.Enabled" id="Input_Enabled" value="true" checked="@Model.Input.Enabled" aria-describedby="enabled-hint" />
+                    <span class="field-label">Enabled</span>
+                </label>
+                <span class="field-hint" id="enabled-hint">A schedule that is not enabled is kept, has no next run, and backs nothing up.</span>
+            </div>
+            <p class="field-hint">Saving a schedule backs nothing up. Its first run is the next occurrence of the expression after now, which the server works out and shows once the schedule is saved.</p>
+            <div class="form-actions">
+                <button type="submit" class="button button-primary" data-busy-label="Saving…">@(creating ? "Create schedule" : "Save schedule")</button>
+                <a class="button" href="@Url.Content("~" + Routes.Schedule(instance.Id, database.Id))">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

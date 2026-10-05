@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -14,6 +15,8 @@ public sealed class DetailsModel(
     DatabaseService databases,
     InstanceConnectivityService connectivity,
     BackupService backups,
+    BackupScheduleService schedules,
+    InstanceHealthService health,
     JobService jobs)
     : DatabasePageModel(instances, databases)
 {
@@ -21,6 +24,16 @@ public sealed class DetailsModel(
     public DatabaseConnectionResponse Connection { get; private set; } = null!;
 
     public JobListResponse Jobs { get; private set; } = null!;
+
+    /// <summary>The database's backup schedule; null if it has none.</summary>
+    public BackupScheduleResponse? Schedule { get; private set; }
+
+    /// <summary>
+    /// How the instance's database server is doing right now, which is as much as is known about
+    /// the health of a database in it: the application has no check of a single database. Null
+    /// while the instance is being provisioned and has no server to look at.
+    /// </summary>
+    public InstanceHealthResponse? InstanceHealth { get; private set; }
 
     /// <summary>The database's newest backups; the rest are a link away.</summary>
     public BackupListResponse Backups { get; private set; } = null!;
@@ -48,6 +61,8 @@ public sealed class DetailsModel(
 
         Connection = connection;
         Backups = newest;
+        Schedule = (await schedules.GetAsync(databaseId, cancellationToken)).Schedule;
+        InstanceHealth = Instance.Status == Api.Domain.Instances.InstanceStatus.Provisioning ? null : await health.GetAsync(id, cancellationToken);
         Jobs = await jobs.ListAsync(new ListJobsQuery { DatabaseId = databaseId, PageSize = Instances.DetailsModel.Shown }, cancellationToken);
         return Page();
     }

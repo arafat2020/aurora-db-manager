@@ -92,4 +92,27 @@ public static class Labels
 
         return $"{value.ToString(unit == 0 ? "0" : "0.##", CultureInfo.InvariantCulture)} {units[unit]}";
     }
+
+    /// <summary>A value as the API writes it and takes it in a query: <c>provision_instance</c>, <c>pending</c>.</summary>
+    public static string ApiValue<TEnum>(TEnum value)
+        where TEnum : struct, Enum => System.Text.Json.JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
+
+    /// <summary>
+    /// An instant as the clock of a time zone shows it, for reading next to the instant itself:
+    /// <c>2026-10-06 00:00</c>. Null if this machine does not know the zone; the instant is still
+    /// what it is. Only how a time is written: when a schedule runs is never worked out here.
+    /// </summary>
+    public static string? InZone(DateTime utc, string timeZoneId)
+    {
+        try
+        {
+            var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone)
+                .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return null;
+        }
+    }
 }

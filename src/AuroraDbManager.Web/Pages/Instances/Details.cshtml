@@ -166,7 +166,7 @@ Username: @Model.Connection.Username</pre>
 <section class="section" aria-labelledby="operations-title">
     <div class="section-header">
         <h2 id="operations-title">Recent operations</h2>
-        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+        <span class="section-note"><a href="@Url.Content("~" + Routes.JobsOfInstance(instance.Id))">All jobs of this instance</a></span>
     </div>
     @if (Model.Jobs.Items.Count == 0)
     {

@@ -333,6 +333,34 @@ See [security.md](security.md#external-database-access) and [ui.md](ui.md#connec
 
 ---
 
+# 💾 Phase 14 — Backup & Restore UI
+
+## Objectives
+
+* Make the existing backup and restore capabilities usable from the UI
+
+## Tasks
+
+* [x] A database's backups, paged, under `/instances/{id}/databases/{databaseId}/backups`
+* [x] Create a backup; the destination is the server's configured storage, shown and not chosen
+* [x] Backup details: status, size, storage, integrity, checksum, operations
+* [x] Restore from a dedicated confirmation page, POST only
+* [x] Storage shown per backup, also when it is no longer the server's default
+* [x] Operators and administrators create and restore; viewers look
+
+## Output
+
+* Backups made, inspected and restored from the UI, through the existing services and job system
+
+## Not included
+
+* Deleting, downloading or uploading backups; restoring into another database
+* Schedules and a cross-database overview
+
+See [ui.md](ui.md#backups-and-restores).
+
+---
+
 # 🚫 What NOT to Build (Yet)
 
 Avoid these early:

@@ -1,0 +1,53 @@
+@page "/instances/{id:guid}/databases/{databaseId:guid}/backups/create"
+@model AuroraDbManager.Web.Pages.Instances.Databases.Backups.CreateModel
+@using AuroraDbManager.Api.Domain.Databases
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    var instance = Model.Instance;
+    var database = Model.Database;
+    ViewData["Title"] = $"Create backup · {database.Name}";
+    var header = new PageHeader("Create backup", $"A backup of the database {database.Name}, in {instance.Name}.")
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb(database.Name, Routes.Database(instance.Id, database.Id)),
+            new Crumb("Backups", Routes.Backups(instance.Id, database.Id)), new Crumb("Create backup")
+        ]
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Problem is not null)
+{
+    <partial name="_Alert" model="@Model.Problem" />
+}
+else if (instance.Status != InstanceStatus.Running || database.Status != DatabaseStatus.Ready)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Warning, "A backup can be made only of a ready database in a running instance.", $"The database is {StatusBadge.For(database.Status).Label.ToLowerInvariant()}, its instance is {StatusBadge.For(instance.Status).Label.ToLowerInvariant()}"))" />
+}
+
+<div class="card form-card">
+    <div class="card-body stack">
+        <dl class="definition-list">
+            <dt>Database</dt>
+            <dd class="mono">@database.Name</dd>
+            <dt>Instance</dt>
+            <dd>@instance.Name</dd>
+            <dt>Engine</dt>
+            <dd>@Labels.For(instance.Engine) @instance.Version</dd>
+            <dt>Storage</dt>
+            <dd>
+                <strong>@Labels.For(Model.Storage)</strong>
+                <span class="muted">@Labels.Describe(Model.Storage) Set by this server's configuration.</span>
+            </dd>
+        </dl>
+        <p class="field-hint">The backup is made in the background and is listed as pending, then running, until it is complete. The database stays available meanwhile. A finished backup is read back from the storage and checked against its checksum before it is marked completed.</p>
+        <form method="post" class="form">
+            <div class="form-actions">
+                <button type="submit" class="button button-primary" data-busy-label="Starting…">Create backup</button>
+                <a class="button" href="@Url.Content("~" + Routes.Backups(instance.Id, database.Id))">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

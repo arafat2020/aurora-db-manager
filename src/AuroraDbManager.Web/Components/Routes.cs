@@ -20,4 +20,12 @@ public static class Routes
     public static string Database(Guid instanceId, Guid databaseId) => $"{Databases(instanceId)}/{databaseId:D}";
 
     public static string DeleteDatabase(Guid instanceId, Guid databaseId) => $"{Database(instanceId, databaseId)}/delete";
+
+    public static string Backups(Guid instanceId, Guid databaseId) => $"{Database(instanceId, databaseId)}/backups";
+
+    public static string CreateBackup(Guid instanceId, Guid databaseId) => $"{Backups(instanceId, databaseId)}/create";
+
+    public static string Backup(Guid instanceId, Guid databaseId, Guid backupId) => $"{Backups(instanceId, databaseId)}/{backupId:D}";
+
+    public static string RestoreBackup(Guid instanceId, Guid databaseId, Guid backupId) => $"{Backup(instanceId, databaseId, backupId)}/restore";
 }

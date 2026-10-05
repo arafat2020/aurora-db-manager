@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -12,6 +13,7 @@ public sealed class DetailsModel(
     InstanceService instances,
     DatabaseService databases,
     InstanceConnectivityService connectivity,
+    BackupService backups,
     JobService jobs)
     : DatabasePageModel(instances, databases)
 {
@@ -20,7 +22,12 @@ public sealed class DetailsModel(
 
     public JobListResponse Jobs { get; private set; } = null!;
 
-    public bool InProgress => Database.Status is DatabaseStatus.Creating or DatabaseStatus.Deleting;
+    /// <summary>The database's newest backups; the rest are a link away.</summary>
+    public BackupListResponse Backups { get; private set; } = null!;
+
+    public bool InProgress =>
+        Database.Status is DatabaseStatus.Creating or DatabaseStatus.Deleting
+        || Backups.Items.Any(backup => backup.Status is Api.Domain.Backups.BackupStatus.Pending or Api.Domain.Backups.BackupStatus.Running);
 
     public async Task<IActionResult> OnGetAsync(Guid id, Guid databaseId, CancellationToken cancellationToken)
     {
@@ -34,7 +41,13 @@ public sealed class DetailsModel(
             return Missing("Database");
         }
 
+        if (await backups.ListAsync(databaseId, new ListBackupsQuery { PageSize = Instances.DetailsModel.Shown }, cancellationToken) is not { } newest)
+        {
+            return Missing("Database");
+        }
+
         Connection = connection;
+        Backups = newest;
         Jobs = await jobs.ListAsync(new ListJobsQuery { DatabaseId = databaseId, PageSize = Instances.DetailsModel.Shown }, cancellationToken);
         return Page();
     }

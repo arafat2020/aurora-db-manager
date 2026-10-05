@@ -1,5 +1,6 @@
 using System.Globalization;
 using AuroraDbManager.Api.Application.Instances;
+using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Domain.Jobs;
 
@@ -55,4 +56,40 @@ public static class Labels
         false => no,
         null => "Unknown"
     };
+
+    public static string For(BackupStorageType storage) => storage switch
+    {
+        BackupStorageType.Local => "Local",
+        BackupStorageType.S3 => "S3",
+        _ => storage.ToString()
+    };
+
+    /// <summary>Where a storage keeps backups, in a sentence. Never which directory, bucket or key.</summary>
+    public static string Describe(BackupStorageType storage) => storage switch
+    {
+        BackupStorageType.Local => "A directory on the server Aurora runs on.",
+        BackupStorageType.S3 => "A bucket of an S3-compatible object store.",
+        _ => string.Empty
+    };
+
+    public static string For(BackupChecksumAlgorithm algorithm) => algorithm switch
+    {
+        BackupChecksumAlgorithm.Sha256 => "SHA-256",
+        _ => algorithm.ToString()
+    };
+
+    /// <summary>A number of bytes as a person reads it: <c>512 B</c>, <c>1.5 KB</c>, <c>184 MB</c>, <c>2.25 GB</c>.</summary>
+    public static string Size(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value.ToString(unit == 0 ? "0" : "0.##", CultureInfo.InvariantCulture)} {units[unit]}";
+    }
 }

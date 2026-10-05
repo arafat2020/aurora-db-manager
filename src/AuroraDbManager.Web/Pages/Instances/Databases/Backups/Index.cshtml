@@ -1,0 +1,48 @@
+@page "/instances/{id:guid}/databases/{databaseId:guid}/backups"
+@model AuroraDbManager.Web.Pages.Instances.Databases.Backups.IndexModel
+@using AuroraDbManager.Api.Domain.Backups
+@{
+    var instance = Model.Instance;
+    var database = Model.Database;
+    ViewData["Title"] = $"Backups · {database.Name}";
+    var create = Offered.CreateBackup(User, instance, database) ? new PageAction("Create backup", Routes.CreateBackup(instance.Id, database.Id)) : null;
+    var header = new PageHeader("Backups", $"Backups of the database {database.Name}, in {instance.Name}, a {Labels.For(instance.Engine)} {instance.Version} instance.", create)
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb(database.Name, Routes.Database(instance.Id, database.Id)),
+            new Crumb("Backups")
+        ]
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Activity.RestoreInProgress is not null)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Progress, "The database may be temporarily unavailable until the restore has finished.", "Restore in progress"))" />
+}
+
+@if (Model.Backups.TotalCount == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("No backups yet", create is not null
+        ? "Create a backup of this database to protect its data."
+        : User.IsOperator() ? "A backup can be made once the database is ready and its instance is running." : "An operator or an administrator creates them.", "backups", create))" />
+}
+else if (Model.Backups.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("Nothing on this page", $"There are {Model.Backups.TotalCount} backups, and this page is past the last of them.", "search", new PageAction("Back to the first page", Routes.Backups(instance.Id, database.Id), ActionTone.Plain)))" />
+}
+else
+{
+    @if (Model.InProgress)
+    {
+        <partial name="_InProgress" model="@Routes.Backups(instance.Id, database.Id)" />
+    }
+    <partial name="_BackupTable" model="@(new BackupTable(instance, database, Model.Backups.Items))" />
+    <partial name="_Pager" model="@(new Pager(Routes.Backups(instance.Id, database.Id), Model.Backups.Page, Model.Backups.PageSize, Model.Backups.Items.Count, Model.Backups.TotalCount))" />
+    @if (Model.Backups.Items.All(backup => backup.Status == BackupStatus.Failed) && Model.Backups.Page == 1 && Model.Backups.Items.Count == Model.Backups.TotalCount)
+    {
+        <p class="table-note">None of these backups was completed, so there is nothing to restore from yet.</p>
+    }
+}

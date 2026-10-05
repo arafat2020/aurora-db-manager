@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Domain.Databases;
 using AuroraDbManager.Api.Domain.Instances;
@@ -79,6 +80,19 @@ public sealed record StatusBadge(string Label, StatusTone Tone)
     /// </summary>
     public static StatusBadge ForExternalAccess(bool enabled) =>
         enabled ? new("Enabled", StatusTone.Warning) : new("Disabled", StatusTone.Neutral);
+
+    /// <summary>
+    /// What is known of a backup's integrity, which is what the backup's record says and nothing
+    /// worked out here: a completed backup has the checksum that was verified against the stored
+    /// bytes before it was completed, or, if it is from before checksums were recorded, none.
+    /// Null while there is nothing to say: a backup that is not finished, or failed, has no artifact.
+    /// </summary>
+    public static StatusBadge? ForIntegrity(BackupResponse backup) => backup switch
+    {
+        { Status: BackupStatus.Completed, Checksum: not null } => new("Verified", StatusTone.Success),
+        { Status: BackupStatus.Completed } => new("No checksum", StatusTone.Neutral),
+        _ => null
+    };
 
     public static StatusBadge ForEnabled(bool enabled) =>
         enabled ? new("Enabled", StatusTone.Success) : new("Disabled", StatusTone.Neutral);

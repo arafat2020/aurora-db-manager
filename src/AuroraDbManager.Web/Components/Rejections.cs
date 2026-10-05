@@ -1,6 +1,8 @@
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
+using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Errors;
 
 namespace AuroraDbManager.Web.Components;
@@ -48,6 +50,31 @@ public static class Rejections
             ErrorCodes.BackupOperationInProgress, "Database cannot be deleted while a backup of it is in progress."),
         DeleteDatabaseStatus.RestoreInProgress => Conflict(
             ErrorCodes.RestoreOperationInProgress, "Database cannot be deleted while it is being restored."),
+        _ => null
+    };
+
+    public static Rejection? For(CreateBackupStatus status) => status switch
+    {
+        CreateBackupStatus.DatabaseNotReady => Conflict(ErrorCodes.DatabaseNotReady, "Only a ready database can be backed up."),
+        CreateBackupStatus.InstanceNotReady => Conflict(ErrorCodes.InstanceNotReady, "Backups need a running instance."),
+        CreateBackupStatus.BackupInProgress => Conflict(
+            ErrorCodes.BackupOperationInProgress, "The database already has a backup in progress."),
+        CreateBackupStatus.RestoreInProgress => Conflict(
+            ErrorCodes.RestoreOperationInProgress, "The database cannot be backed up while it is being restored."),
+        _ => null
+    };
+
+    public static Rejection? For(CreateRestoreStatus status) => status switch
+    {
+        CreateRestoreStatus.BackupNotCompleted => Conflict(ErrorCodes.BackupNotCompleted, "Only a completed backup can be restored."),
+        CreateRestoreStatus.StorageNotConfigured => Conflict(
+            ErrorCodes.BackupStorageNotConfigured, "The backup storage the backup belongs to is not configured on the server."),
+        CreateRestoreStatus.DatabaseNotReady => Conflict(ErrorCodes.DatabaseNotReady, "A backup can only be restored into a ready database."),
+        CreateRestoreStatus.InstanceNotReady => Conflict(ErrorCodes.InstanceNotReady, "Restores need a running instance."),
+        CreateRestoreStatus.RestoreInProgress => Conflict(
+            ErrorCodes.RestoreOperationInProgress, "The database is already being restored."),
+        CreateRestoreStatus.BackupInProgress => Conflict(
+            ErrorCodes.BackupOperationInProgress, "The database cannot be restored while it is being backed up."),
         _ => null
     };
 

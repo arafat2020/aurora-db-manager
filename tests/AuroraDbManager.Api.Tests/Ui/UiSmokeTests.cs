@@ -166,7 +166,6 @@ public sealed class UiSmokeTests : IDisposable
     // --- Sections that are still to come -------------------------------------------------------
 
     [Theory]
-    [InlineData("/backups", "/api/v1/databases/{id}/backups")]
     [InlineData("/schedules", "/api/v1/databases/{id}/backup-schedule")]
     [InlineData("/monitoring", "/api/v1/monitoring/summary")]
     public async Task SectionThatIsNotBuiltYet_SaysSo_AndPointsToTheApiThatDoesItToday(string path, string api)

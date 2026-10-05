@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
+using AuroraDbManager.Api.Domain.Backups;
 using AuroraDbManager.Api.Domain.Databases;
 using AuroraDbManager.Api.Domain.Instances;
 
@@ -25,6 +27,13 @@ public static class Offered
 
     public static bool CreateDatabase(ClaimsPrincipal user, InstanceResponse instance) =>
         user.IsOperator() && instance.Status == InstanceStatus.Running;
+
+    public static bool CreateBackup(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database) =>
+        user.IsOperator() && instance.Status == InstanceStatus.Running && database.Status == DatabaseStatus.Ready;
+
+    /// <summary>Only a finished backup holds anything to restore, and only a ready database of a running instance can take it.</summary>
+    public static bool RestoreBackup(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database, BackupResponse backup) =>
+        CreateBackup(user, instance, database) && backup.Status == BackupStatus.Completed;
 
     public static bool DeleteDatabase(ClaimsPrincipal user, InstanceResponse instance, DatabaseResponse database) =>
         user.IsOperator() && instance.Status == InstanceStatus.Running && database.Status == DatabaseStatus.Ready;

@@ -842,6 +842,17 @@ a.stat:hover {
   justify-self: stretch;
 }
 
+/* Technical detail that is there for whoever wants it: a checksum. */
+.disclosure > summary {
+  cursor: pointer;
+}
+
+.checksum {
+  display: block;
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
 .subheading {
   color: var(--text-muted);
   font-size: var(--text-xs);

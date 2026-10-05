@@ -1,0 +1,60 @@
+@model BackupTable
+<div class="table-wrap">
+    <table class="table">
+        <caption>Backups of @Model.Database.Name, newest first</caption>
+        <thead>
+            <tr>
+                <th scope="col">Created</th>
+                <th scope="col">Status</th>
+                <th scope="col">Size</th>
+                <th scope="col">Storage</th>
+                <th scope="col">Integrity</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var backup in Model.Backups)
+            {
+                var path = Routes.Backup(Model.Instance.Id, Model.Database.Id, backup.Id);
+                <tr>
+                    <td class="cell-primary"><a href="@Url.Content("~" + path)"><partial name="_Time" model="@((DateTime?)backup.CreatedAt)" /></a></td>
+                    <td>
+                        <partial name="_StatusBadge" model="@StatusBadge.For(backup.Status)" />
+                        @if (backup.Error is not null)
+                        {
+                            <code>@backup.Error.Code</code>
+                        }
+                    </td>
+                    <td>
+                        @if (backup.SizeBytes is { } size)
+                        {
+                            @Labels.Size(size)
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                    <td>@Labels.For(backup.StorageType)</td>
+                    <td>
+                        @if (StatusBadge.ForIntegrity(backup) is { } integrity)
+                        {
+                            <partial name="_StatusBadge" model="@integrity" />
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                    <td class="cell-actions">
+                        <a class="button button-quiet" href="@Url.Content("~" + path)">Open<span class="visually-hidden"> the backup of <partial name="_Time" model="@((DateTime?)backup.CreatedAt)" /></span></a>
+                        @if (Offered.RestoreBackup(User, Model.Instance, Model.Database, backup))
+                        {
+                            <a class="button button-quiet button-danger" href="@Url.Content("~" + Routes.RestoreBackup(Model.Instance.Id, Model.Database.Id, backup.Id))">Restore<span class="visually-hidden"> the backup of <partial name="_Time" model="@((DateTime?)backup.CreatedAt)" /></span></a>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,161 @@
+@page "/instances/{id:guid}/databases/{databaseId:guid}/backups/{backupId:guid}"
+@model AuroraDbManager.Web.Pages.Instances.Databases.Backups.DetailsModel
+@using AuroraDbManager.Api.Domain.Backups
+@{
+    var instance = Model.Instance;
+    var database = Model.Database;
+    var backup = Model.Backup;
+    var created = DateTime.SpecifyKind(backup.CreatedAt, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm") + " UTC";
+    ViewData["Title"] = $"Backup of {created} · {database.Name}";
+    var header = new PageHeader(
+        $"Backup of {created}",
+        $"A backup of the database {database.Name}, in {instance.Name}.",
+        Offered.RestoreBackup(User, instance, database, backup) && Model.StorageConfigured
+            ? new PageAction("Restore this backup", Routes.RestoreBackup(instance.Id, database.Id, backup.Id), ActionTone.Danger)
+            : null)
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb(database.Name, Routes.Database(instance.Id, database.Id)),
+            new Crumb("Backups", Routes.Backups(instance.Id, database.Id)), new Crumb(created)
+        ],
+        Status = StatusBadge.For(backup.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.RestoreInProgress is not null)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Progress, "The database is being restored from this backup, and may be temporarily unavailable until that has finished.", "Restore in progress"))" />
+}
+else if (Model.RestoreFailed is { Error: { } restoreError })
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Danger, $"{restoreError.Message} The database may have been left empty or partly restored. Restoring again repairs that.", $"The last restore failed: {restoreError.Code}"))" />
+}
+else if (Model.RestoreCompleted is { CompletedAt: { } restoredAt })
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Success, $"The database was last restored from this backup at {DateTime.SpecifyKind(restoredAt, DateTimeKind.Utc):yyyy-MM-dd HH:mm} UTC.", "Restore completed"))" />
+}
+
+@if (Model.InProgress)
+{
+    <partial name="_InProgress" model="@Routes.Backup(instance.Id, database.Id, backup.Id)" />
+}
+
+@if (backup.Error is not null)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Danger, backup.Error.Message, backup.Error.Code))" />
+}
+
+<section class="section" aria-labelledby="backup-title">
+    <div class="section-header">
+        <h2 id="backup-title">Backup</h2>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Status</dt>
+                <dd>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(backup.Status)" />
+                    <span class="muted">
+                        @(backup.Status switch
+                        {
+                            BackupStatus.Pending => "The backup has been asked for and is waiting to be made.",
+                            BackupStatus.Running => "The backup is being made.",
+                            BackupStatus.Completed => "The backup is in the storage and can be restored.",
+                            _ => "The backup could not be made. There is nothing to restore from it."
+                        })
+                    </span>
+                </dd>
+                <dt>Database</dt>
+                <dd><a class="mono" href="@Url.Content("~" + Routes.Database(instance.Id, database.Id))">@database.Name</a></dd>
+                <dt>Instance</dt>
+                <dd><a href="@Url.Content("~" + Routes.Instance(instance.Id))">@instance.Name</a> <span class="muted">@Labels.For(instance.Engine) @instance.Version</span></dd>
+                <dt>Created</dt>
+                <dd><partial name="_Time" model="@((DateTime?)backup.CreatedAt)" /></dd>
+                <dt>@(backup.Status == BackupStatus.Failed ? "Failed" : "Completed")</dt>
+                <dd>
+                    @if (backup.CompletedAt is not null)
+                    {
+                        <partial name="_Time" model="@backup.CompletedAt" />
+                    }
+                    else
+                    {
+                        <span class="muted">Not available</span>
+                    }
+                </dd>
+                <dt>Size</dt>
+                <dd>
+                    @if (backup.SizeBytes is { } size)
+                    {
+                        <span>@Labels.Size(size)</span>
+                        <span class="muted">@size.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) bytes</span>
+                    }
+                    else
+                    {
+                        <span class="muted">Not available</span>
+                    }
+                </dd>
+                <dt>Storage</dt>
+                <dd>
+                    <strong>@Labels.For(backup.StorageType)</strong>
+                    <span class="muted">@Labels.Describe(backup.StorageType)</span>
+                    @if (!Model.StorageConfigured)
+                    {
+                        <partial name="_StatusBadge" model="@(new StatusBadge("Not configured on this server", StatusTone.Warning))" />
+                        <span class="muted">The backup cannot be read, and so not restored, until this server has settings for that storage again.</span>
+                    }
+                </dd>
+                <dt>Integrity</dt>
+                <dd>
+                    @if (StatusBadge.ForIntegrity(backup) is { } integrity)
+                    {
+                        <partial name="_StatusBadge" model="@integrity" />
+                        <span class="muted">
+                            @if (backup.Checksum is not null)
+                            {
+                                <text>The stored backup was read back and matched its checksum before it was marked completed. It is checked again before it is restored.</text>
+                            }
+                            else
+                            {
+                                <text>This backup was completed before checksums were recorded. Before a restore it is checked by size and format only.</text>
+                            }
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="muted">Not available</span>
+                    }
+                </dd>
+                @if (backup.Checksum is not null && backup.ChecksumAlgorithm is { } algorithm)
+                {
+                    <dt>Checksum</dt>
+                    <dd>
+                        <details class="disclosure">
+                            <summary>@Labels.For(algorithm)</summary>
+                            <code class="checksum">@backup.Checksum</code>
+                        </details>
+                    </dd>
+                }
+                <dt>ID</dt>
+                <dd class="mono">@backup.Id</dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="operations-title">
+    <div class="section-header">
+        <h2 id="operations-title">Operations on this backup</h2>
+        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+    </div>
+    @if (Model.Operations.Count == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No recent operations", "Making this backup, and restores of it, are not among the database's most recent operations.", "jobs"))" />
+    }
+    else
+    {
+        <partial name="_RecentJobs" model="@(new AuroraDbManager.Api.Application.Jobs.JobListResponse(Model.Operations, 1, Model.Operations.Count, Model.Operations.Count))" />
+    }
+</section>

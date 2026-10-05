@@ -25,6 +25,7 @@
                     <td><partial name="_Time" model="@((DateTime?)database.CreatedAt)" /></td>
                     <td class="cell-actions">
                         <a class="button button-quiet" href="@Url.Content("~" + Routes.Database(Model.Instance.Id, database.Id))">Open<span class="visually-hidden"> @database.Name</span></a>
+                        <a class="button button-quiet" href="@Url.Content("~" + Routes.Backups(Model.Instance.Id, database.Id))">Backups<span class="visually-hidden"> of @database.Name</span></a>
                         @if (Offered.DeleteDatabase(User, Model.Instance, database))
                         {
                             <a class="button button-quiet button-danger" href="@Url.Content("~" + Routes.DeleteDatabase(Model.Instance.Id, database.Id))">Delete<span class="visually-hidden"> @database.Name</span></a>

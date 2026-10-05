@@ -97,6 +97,33 @@
     </div>
 </section>
 
+<section class="section" aria-labelledby="backups-title">
+    <div class="section-header">
+        <h2 id="backups-title">Backups</h2>
+        <span class="section-actions">
+            <a class="button" href="@Url.Content("~" + Routes.Backups(instance.Id, database.Id))">All backups (@Model.Backups.TotalCount)</a>
+            @if (Offered.CreateBackup(User, instance, database))
+            {
+                <a class="button button-primary" href="@Url.Content("~" + Routes.CreateBackup(instance.Id, database.Id))"><partial name="_Icon" model="@("plus")" />Create backup</a>
+            }
+        </span>
+    </div>
+    @if (Model.Backups.TotalCount == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No backups yet", Offered.CreateBackup(User, instance, database)
+            ? "Create a backup of this database to protect its data."
+            : User.IsOperator() ? "A backup can be made once the database is ready and its instance is running." : "An operator or an administrator creates them.", "backups", Offered.CreateBackup(User, instance, database) ? new PageAction("Create backup", Routes.CreateBackup(instance.Id, database.Id)) : null))" />
+    }
+    else
+    {
+        <partial name="_BackupTable" model="@(new BackupTable(instance, database, Model.Backups.Items))" />
+        @if (Model.Backups.TotalCount > Model.Backups.Items.Count)
+        {
+            <p class="table-note">Showing the @Model.Backups.Items.Count newest of @Model.Backups.TotalCount.</p>
+        }
+    }
+</section>
+
 <section class="section" aria-labelledby="operations-title">
     <div class="section-header">
         <h2 id="operations-title">Recent operations</h2>

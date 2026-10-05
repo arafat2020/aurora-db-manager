@@ -142,11 +142,12 @@ The UI uses the roles and the policies the API uses (`AuroraPolicies`); it has n
 
 | Section | viewer | operator | admin |
 | --- | :---: | :---: | :---: |
-| Overview, Instances, Backups, Schedules, Jobs, Monitoring | ✔ | ✔ | ✔ |
+| Overview, Instances, Schedules, Jobs, Monitoring | ✔ | ✔ | ✔ |
 | Users | | | ✔ |
 
 What each role may do with instances and databases is in
-[Instances and databases](#who-may-do-what).
+[Instances and databases](#who-may-do-what), and with backups in
+[Backups and restores](#backups-and-restores).
 
 ## Project structure
 
@@ -169,6 +170,7 @@ src/AuroraDbManager.Web/
 │   │   ├── _Pager.cshtml          which part of a list is shown, and the way to the rest
 │   │   ├── _InProgress.cshtml     work is in progress: refresh
 │   │   ├── _DatabaseTable.cshtml  the databases of an instance
+│   │   ├── _BackupTable.cshtml    the backups of a database
 │   │   ├── _ConnectionEndpoints.cshtml  where a server is reached, inside and outside Docker
 │   │   ├── _RecentJobs.cshtml     the last few operations on an instance or a database
 │   │   ├── _Icon.cshtml           the icons, inline
@@ -177,8 +179,9 @@ src/AuroraDbManager.Web/
 │   ├── Login / Logout / Error
 │   ├── Instances/                 list, create, details, delete, external access
 │   │   └── Databases/             an instance's databases: list, create, details, delete
+│   │       └── Backups/           a database's backups: list, create, details, restore
 │   ├── Jobs, Users                read-only lists
-│   ├── Backups, Schedules, Monitoring   placeholders
+│   ├── Schedules, Monitoring      placeholders
 │   └── Styleguide.cshtml          every building block (development only)
 └── wwwroot/
     ├── css/aurora.css
@@ -273,7 +276,8 @@ Razor Page  ──►  InstanceService / DatabaseService / InstanceHealthService
 | `/instances/{id}/databases/{databaseId}/delete` | The question, and the form that deletes | `DatabaseService.DeleteAsync` |
 
 Ids are GUIDs; anything else in their place is no page. A database is always addressed under its
-instance, and a database of another instance is not found there. There is no top-level
+instance, and a database of another instance is not found there. Its backups are addressed under
+it in turn ([Backups and restores](#backups-and-restores)). There is no top-level
 *Databases* section: nothing lists databases across instances, in the application or in the API,
 so they are reached through *Instances*.
 
@@ -404,6 +408,139 @@ No page shows, embeds or logs a credential. The administrator password of an ins
 the secret store, as it does for the API; the pages never ask for it. Connection strings on the
 pages are templates with `<password>` in place of the password, and the only hidden field of any
 form is the antiforgery token.
+
+## Backups and restores
+
+A database's backups are reached from the database: its page has a *Backups* section with the
+newest few, and the list of an instance's databases has a *Backups* link on each row. There is no
+top-level *Backups* section; nothing lists backups across databases, in the application or in the
+API.
+
+These pages are a presentation of `BackupService` and `RestoreService`, the services behind
+`/api/v1/databases/{id}/backups` and `/api/v1/backups/{id}`, and of the jobs `JobService` lists.
+No page makes, reads, checks or restores a backup, touches the backup storage, or runs anything
+against a database. Nothing in the backend was changed for them.
+
+```text
+Razor Page  ──►  BackupService / RestoreService  ──►  job system  ──►  dump tools · backup storage · database
+```
+
+### Pages
+
+| Address | Page | Reads and calls |
+| --- | --- | --- |
+| `…/databases/{databaseId}/backups` | The database's backups, 20 to a page (`?page=2`) | `BackupService.ListAsync`, `JobService.ListAsync` |
+| `…/backups/create` | What will be backed up and where to, and the form that asks for it | `BackupService.CreateAsync` |
+| `…/backups/{backupId}` | One backup: status, size, storage, integrity, checksum, operations on it | `BackupService.GetAsync`, `IBackupStorageResolver.Resolve`, `JobService.ListAsync` |
+| `…/backups/{backupId}/restore` | The question, and the form that asks for the restore | `RestoreService.CreateAsync` |
+
+(`…` is `/instances/{id}`.) Every page says which database of which instance it is about, in its
+header and its breadcrumbs: *Instances / production / Databases / shop / Backups*. A backup is
+only found under its own database; under any other address it is *Backup not found*.
+
+### Who may do what
+
+| | viewer | operator | admin |
+| --- | :---: | :---: | :---: |
+| See backups, their status, size, storage and integrity | ✔ | ✔ | ✔ |
+| Create a backup | | ✔ | ✔ |
+| Restore a backup | | ✔ | ✔ |
+
+The create and restore pages carry the operator policy of the API endpoints that do the same. A
+viewer who opens one, or sends its form by hand, gets the `403` page.
+
+### The list
+
+Newest first: when the backup was asked for, its status (**Pending**, **Running**, **Completed**,
+**Failed**, with the stable error code of a failed one), its size, the storage it is in, and its
+integrity. Paging is the service's (`?page=2`, 20 to a page); `?page=0` and a page size above the
+service's maximum are refused with the `400` page, and a page past the last one says so with a
+way back. A database without backups has an empty state that offers *Create backup* to those who
+may. A history that holds only failed backups says there is nothing to restore from yet.
+
+### Creating a backup
+
+The create page shows the database, the instance, the engine, and the **storage the backup will
+go to**. That storage is the server's setting (`Backups:StorageType`), exactly as for the API: a
+request for a backup is the database and nothing else, so the page has no selector and no other
+field. It shows the storage's type (*Local* or *S3*) and never a directory, bucket, key or
+credential.
+
+Submitting asks `BackupService` for the backup. It is made by a job, so the page it leads to says
+*Backup creation started.* and shows the backup as **Pending**, then **Running**. It is
+**Completed** only when the job has stored the artifact, read it back from the storage and
+matched it against its checksum. If the service refuses (the database is not ready, the instance
+not running, a backup or a restore already under way) the page comes back with the stable code
+and sentence and status `409`, and nothing was created.
+
+### Storage
+
+A backup is in the storage its record names, which is the storage that was the server's default
+when it was made and need not be the default now. The pages show the backup's own storage, never
+the current setting: after a change from S3 to local, an older backup still says *S3*, and is
+restored from S3.
+
+If the server no longer has settings for a backup's storage, the backup's page says *Not
+configured on this server*, does not offer a restore, and a restore that is asked for anyway is
+refused with `BACKUP_STORAGE_NOT_CONFIGURED`. Whether a storage is usable is asked of
+`IBackupStorageResolver`, the resolver every restore goes through; the pages construct no path
+and no key.
+
+### Integrity
+
+Integrity is what the backup's record says. Nothing is hashed or compared by a page.
+
+| Shown | Means |
+| --- | --- |
+| **Verified** | The backup is completed and has a checksum. The job read the stored artifact back and matched it before completing the backup. |
+| **No checksum** | The backup was completed before checksums were recorded. It is a backup; a restore checks it by size and format only. |
+| *Not available* | The backup is not finished, or failed: there is no artifact. |
+
+The checksum itself (SHA-256) is on the backup's page, folded away under its name. A backup is
+checked again when it is restored: one that no longer matches its checksum is not restored, the
+restore fails with `RESTORE_ARTIFACT_CHECKSUM_MISMATCH` before anything in the database is
+changed, and the backup's page shows that failure. A backup that failed its check while it was
+being made is a **Failed** backup with `BACKUP_CHECKSUM_MISMATCH`.
+
+### Restoring
+
+Restoring replaces everything in a database, so it takes more than a click.
+
+- *Restore* on a completed backup is a link to the restore page. It restores nothing.
+- The page names the database and its instance, the backup's time and ID, its size, storage and
+  integrity, and then says what will happen: the current contents are removed and replaced; what
+  was created or changed since the backup is lost; this cannot be undone through Aurora unless
+  another backup holds the current data; clients are disconnected and the database may be
+  unavailable meanwhile.
+- Only the page's form restores: a `POST` with an antiforgery token. A `GET` restores nothing,
+  whatever its address carries, and there is no script confirmation standing in for the page.
+- The target is always the backup's own database. The form has no field to name another.
+- Whether the restore is accepted is `RestoreService`'s to say: a completed backup, a usable
+  storage, a ready database, a running instance, and nothing else at work in the database. The
+  page checks none of that itself, and shows a refusal with its stable code and status `409`.
+
+A restore is a job. The page it leads to, the backup's, says *Restore started.* and shows
+**Restore in progress**; the database's backup list says the same. When the job is done the
+backup's page says **Restore completed** with the time, or **The last restore failed** with the
+job's stable code and message, and that a failed restore may have left the database empty or
+partly restored, which restoring again repairs. No progress percentage is shown, because the
+application has none.
+
+### Work in progress
+
+As on the instance and database pages: while a backup is pending or running, or a restore is
+under way, the page shows *Work is in progress* with a **Refresh** link and, with JavaScript,
+reloads itself every five seconds while it is visible, at most 60 times. No SignalR, no polling
+of an endpoint.
+
+### Not included
+
+- **Deleting a backup.** The application has no such operation, so there is no button for it.
+- **Restoring into another database**, downloading a backup, or uploading one.
+- **Choosing the storage** of a new backup. It is the server's setting.
+- **Schedules** and a cross-database backup overview; they belong to later phases.
+- *Operations on this backup* lists what is among the database's 50 most recent jobs. Older ones
+  are in *Jobs*.
 
 ## Styling
 
@@ -541,7 +678,6 @@ stylesheet and script (pre-compressed). No Node, no asset pipeline, no separate 
 
 Each of these builds on the shell, the components and the rules above:
 
-- backups and restores
 - backup schedules
 - jobs: filtering, paging, detail
 - the monitoring dashboard

@@ -61,7 +61,7 @@
             <div class="stat-value">@summary.Jobs.Running</div>
             <div class="stat-detail">@summary.Jobs.Pending pending</div>
         </a>
-        <a class="card stat" href="~/backups">
+        <a class="card stat" href="~/jobs">
             <div class="stat-label"><partial name="_Icon" model="@("backups")" />Backups in progress</div>
             <div class="stat-value">@(summary.Backups.Running + summary.Backups.Pending)</div>
             <div class="stat-detail">@summary.Backups.FailedRecently failed in the last @summary.RecentWindowHours hours</div>

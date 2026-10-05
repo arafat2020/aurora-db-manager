@@ -96,3 +96,12 @@ public sealed record DatabaseTable(
 public sealed record ConnectionView(
     AuroraDbManager.Api.Application.Connectivity.InstanceConnectionResponse Connection,
     string? Database = null);
+
+/// <summary>Backups of a database, as a table.</summary>
+/// <param name="Instance">The instance the database is in.</param>
+/// <param name="Database">The database they are of.</param>
+/// <param name="Backups">The ones to show.</param>
+public sealed record BackupTable(
+    AuroraDbManager.Api.Application.Instances.InstanceResponse Instance,
+    AuroraDbManager.Api.Application.Databases.DatabaseResponse Database,
+    IReadOnlyList<AuroraDbManager.Api.Application.Backups.BackupResponse> Backups);

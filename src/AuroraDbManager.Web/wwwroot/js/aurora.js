@@ -4,6 +4,7 @@
 //   - forms show that they were submitted, and cannot be submitted twice
 //   - forms marked data-confirm ask before they are submitted
 //   - a page that shows work in progress reloads itself, for a while, while it is looked at
+//   - buttons marked data-copy copy the text of an element, where the browser lets them
 
 (function () {
   "use strict";
@@ -91,6 +92,27 @@
     dialog.querySelector("[data-confirm-cancel]").addEventListener("click", function () {
       dialog.close();
       pending = null;
+    });
+  }
+
+  // Copying: <button data-copy="#connection-string" hidden>. The button is hidden until this has
+  // found that copying works here; the text it would copy is on the page either way.
+  if (navigator.clipboard && window.isSecureContext) {
+    document.querySelectorAll("[data-copy]").forEach(function (button) {
+      var source = document.querySelector(button.dataset.copy);
+      if (!source) {
+        return;
+      }
+      var label = button.textContent;
+      button.hidden = false;
+      button.addEventListener("click", function () {
+        navigator.clipboard.writeText(source.textContent.trim()).then(function () {
+          button.textContent = "Copied";
+          window.setTimeout(function () {
+            button.textContent = label;
+          }, 2000);
+        });
+      });
     });
   }
 

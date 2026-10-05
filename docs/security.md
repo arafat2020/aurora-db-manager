@@ -36,6 +36,9 @@ client ──HTTPS──► reverse proxy ──► Aurora API ──► Docker 
 5. Set `AllowedHosts` to the host name(s) Aurora is served under.
 6. Make sure Aurora is reachable only through the proxy, and the Docker socket only by Aurora.
 7. Give the S3 credentials only the permissions listed below.
+8. Leave `ExternalAccess:BindAddress` at `127.0.0.1` unless database clients on other machines
+   have to connect; if they do, put a firewall in front of the port range first
+   ([External database access](#external-database-access)).
 
 ## Configuration
 
@@ -204,13 +207,152 @@ Aurora runs `pg_dump`, `pg_restore`, `mysqldump` and `mysql` on its own machine,
 - Images come from a fixed catalog of engine and version (`postgres:15`–`17`, `mysql:8.0`,
   `8.4`). A version outside it fails the instance; it never becomes an image reference.
 - Containers are created without privileges, with `no-new-privileges`, with no capabilities or
-  devices added, with no bind mount of any host path (the only mount is the instance's named
-  volume) and with no port published on the host. They are reachable only on Aurora's Docker
-  network.
-- The API has no operation that takes a host path, an image, a Docker option or a command.
+  devices added, and with no bind mount of any host path (the only mount is the instance's named
+  volume).
+- A container publishes **no port on the host** unless an administrator has enabled external
+  access for its instance, and then exactly one: the engine's own port, on a host port Aurora
+  picked, bound to the address the server is configured with. See
+  [External database access](#external-database-access). Otherwise it is reachable only on
+  Aurora's Docker network.
+- The API has no operation that takes a host path, an image, a Docker option, a command, a port or
+  an address.
 
 The database processes inside the containers run under the images' own defaults. Containers that
 were created before this phase keep their settings until they are recreated.
+
+## External database access
+
+By default a database instance can be reached from Aurora's Docker network and from nowhere else.
+An administrator can enable **external access** for an instance; Aurora then publishes that
+instance's database port on a port of the Docker host. Nothing else exposes a database: not
+creating an instance, not creating a database, and not upgrading Aurora. Instances that existed
+before this feature are private after the upgrade.
+
+```text
+client ──► <bind address>:<host port> on the Docker host ──► the instance's database port
+           (15432…16432)                                     (5432 PostgreSQL, 3306 MySQL)
+```
+
+### What Aurora controls, and what it does not
+
+Aurora controls **Docker's port publishing**, and nothing beyond it. It does not open, close or
+inspect the host's firewall (`ufw`, `iptables`, `nftables`), a cloud security group, a load
+balancer, NAT or routing. *External access: Enabled* means the port is published on the address
+below. Whether anyone can actually reach it is decided by that address and by what is in front
+of the host, and that is the operator's to configure. Aurora never describes a database as
+reachable from the internet, because it cannot know.
+
+One thing about Docker matters here: **published ports bypass `ufw`** and similar host firewalls
+on most Linux installations, because Docker writes its own `iptables` rules ahead of them. A rule
+that blocks the port for everything else does not necessarily block a port Docker published. Bind
+to a specific address, or filter in the `DOCKER-USER` chain or in the network in front of the
+host; do not rely on `ufw deny` alone.
+
+### The bind address
+
+`ExternalAccess:BindAddress` is the address of the Docker host that every published database
+port is bound to. It is a setting of the server; no request and no user can choose another.
+
+| `BindAddress` | Reachable from | Use it when |
+| --- | --- | --- |
+| `127.0.0.1` (default) | the Docker host itself only | clients run on the host, or reach it through an SSH tunnel or a proxy on the host. This is the default because it exposes nothing to any network. |
+| a private address, e.g. `10.0.0.5` | whatever can reach that interface | clients are on a private network or VPN the host is attached to |
+| `0.0.0.0` | every network the host is on, the internet included if it has a public address | only with a firewall or security group in front that allows the port range from known addresses |
+
+Changing the setting and restarting Aurora moves the published ports of the instances that have
+external access to the new address; each of those database servers is restarted once for it.
+
+With `0.0.0.0` Aurora does not know which address clients use. Set `ExternalAccess:AdvertisedHost`
+to the host name or address to show them; without it the UI and the API give no host, and
+connection strings have the placeholder `<server-address>`.
+
+### Ports
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `ExternalAccess:BindAddress` | `127.0.0.1` | An IP address of the Docker host. |
+| `ExternalAccess:AdvertisedHost` | empty | Host name or address shown to clients. Empty: the bind address, if it is a specific one. |
+| `ExternalAccess:PortRangeStart` | `15432` | First host port that may be given to an instance. Never below 1024. |
+| `ExternalAccess:PortRangeEnd` | `16432` | Last one. |
+
+- An instance gets the lowest port of the range that no instance has on record and that nothing
+  is published on in Docker. A request cannot name a port.
+- One port belongs to one instance. A unique index in the system database refuses a second
+  instance the same port, so two requests at the same moment cannot both get it; the one that is
+  refused takes the next port.
+- A port can be taken by something Docker does not list, a process on the host for instance.
+  Docker then refuses to publish on it, and Aurora tries the next port (up to five), or answers
+  `PORT_ALLOCATION_FAILED`.
+- Disabling external access gives the port up; it may be given to another instance later. Open
+  the firewall for the range, not for one port you expect an instance to keep.
+- Invalid settings stop Aurora at startup with a message that names the setting.
+
+### Enabling and disabling restarts the database
+
+Docker cannot change what an existing container publishes. Enabling or disabling external access
+therefore **replaces the instance's container and restarts its database server**:
+
+1. the server is stopped in order and its container set aside;
+2. a new container is created on the **same data volume**, with the new port configuration;
+3. it is started, and Aurora waits until the database accepts connections;
+4. the new container's labels, image, volume and published port are checked;
+5. only then is the old container removed, and the change recorded.
+
+The database is unavailable to all its clients from step 1 to step 3, usually a few seconds. The
+data volume is never removed, recreated or replaced. If any step fails, the new container is
+removed, the old one is put back and started, nothing is recorded, and the request fails with a
+stable code (`DOCKER_PORT_CONFIGURATION_FAILED`, `PORT_ALREADY_IN_USE` handled by trying another
+port, `DOCKER_UNAVAILABLE`). Aurora never records external access as enabled unless Docker has
+the port published and the database is up behind it.
+
+The change is refused while the instance is not `running`, and while a job is at work in it (a
+database being created or deleted, a backup, a restore), because the restart would fail that job.
+A job that starts during the restart can still fail and be retried.
+
+### After a restart of Aurora
+
+The instance's record is what counts. When Aurora starts it checks every running instance's
+container against it: the owner label, the image, the volume, and now the published port and
+its bind address.
+
+- A container that matches is left alone; it is not recreated.
+- A container that publishes something the record does not say, or does not publish what it says,
+  is brought in line with the record by the same replacement as above. This covers a change that
+  was interrupted by a crash, a reconfigured bind address, and a container altered behind Aurora's
+  back. A port the record says is private does not stay published.
+- A container that is not the instance's own is never touched, as before.
+
+While an instance is being provisioned, a container left by an earlier attempt is adopted only if
+it publishes exactly what the record says; otherwise provisioning fails with
+`DOCKER_RESOURCE_CONFLICT` and the container is left as it is.
+
+### Who may
+
+| | viewer | operator | admin |
+| --- | :---: | :---: | :---: |
+| See whether and where an instance is reachable | ✔ | ✔ | ✔ |
+| Enable or disable external access | | | ✔ |
+
+Exposure is of the instance, like creating and deleting it, so it is an administrator's. All
+databases of an instance share its server and therefore its port: enabling external access makes
+every database in the instance reachable there for anyone who can reach the port and
+authenticate.
+
+### Passwords and encryption in transit
+
+- **Aurora does not show an instance's administrator password**, in the UI or the API, with
+  external access or without. Connection information is the host, the port, the database name
+  and the user name. Connection strings are templates with the literal `<password>` where the
+  password goes. No connection string with a password is built anywhere in Aurora's code that
+  serves users, so none can be logged, rendered or returned.
+- The only account an instance has is the engine's administrator (`postgres`, `root`), and its
+  password is in Aurora's secret store. Aurora does not yet create application users or hand out
+  that password. Getting credentials to a client is therefore outside Aurora for now: see *What
+  is deliberately not included*.
+- **Aurora does not set up TLS for database connections.** The engines' own defaults apply:
+  MySQL 8 offers TLS with a self-signed certificate; the PostgreSQL image does not enable it. On
+  anything but `127.0.0.1` or a trusted private network, treat connections as unencrypted unless
+  you have configured otherwise, and prefer a tunnel or a VPN.
 
 ## Backups on the local filesystem
 
@@ -291,6 +433,10 @@ operation except login as requiring it; it contains no secrets. There is no Swag
 statuses only. `GET /health/storage` requires a signed-in user. See [monitoring.md](monitoring.md).
 
 ## What is deliberately not included
+
+For database connectivity: TLS termination for database connections, a database proxy, SSH
+tunnelling, VPN integration, firewall or security-group automation, per-database users, and a
+way to reveal or rotate an instance's administrator password.
 
 MFA, OAuth/OIDC and SSO; refresh tokens and token revocation; account lockout and CAPTCHA;
 distributed or Redis-backed rate limiting; a WAF or API gateway; an audit-log subsystem; SIEM

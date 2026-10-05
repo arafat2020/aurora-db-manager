@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Docker.DotNet;
@@ -104,7 +105,8 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
                     .Select(mount => new DockerMount(mount.Name, mount.Destination))
                     .ToList(),
                 (container.NetworkSettings?.Networks ?? new Dictionary<string, EndpointSettings>())
-                    .ToDictionary(network => network.Key, network => network.Value.IPAddress ?? string.Empty));
+                    .ToDictionary(network => network.Key, network => network.Value.IPAddress ?? string.Empty),
+                PortBindingsOf(container.HostConfig));
         });
 
     public Task CreateContainerAsync(DockerContainerSpec spec, CancellationToken cancellationToken) =>
@@ -116,16 +118,33 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
                     Image = spec.Image,
                     Env = spec.Environment.Select(variable => $"{variable.Key}={variable.Value}").ToList(),
                     Labels = spec.Labels.ToDictionary(),
+                    ExposedPorts = spec.PortBinding is null
+                        ? null
+                        : new Dictionary<string, EmptyStruct> { [TcpPort(spec.PortBinding.ContainerPort)] = default },
                     HostConfig = new HostConfig
                     {
                         NanoCPUs = spec.NanoCpus,
                         Memory = spec.MemoryBytes,
                         NetworkMode = spec.NetworkName,
                         // Stated, not left to defaults: never privileged, no way to gain privileges
-                        // after start, and no port of the host. The only mount is the named volume below.
+                        // after start, and no port of the host but the one the spec names, if it names
+                        // one, on the address it names. The only mount is the named volume below.
                         Privileged = false,
                         SecurityOpt = ["no-new-privileges:true"],
                         PublishAllPorts = false,
+                        PortBindings = spec.PortBinding is null
+                            ? null
+                            : new Dictionary<string, IList<PortBinding>>
+                            {
+                                [TcpPort(spec.PortBinding.ContainerPort)] =
+                                [
+                                    new PortBinding
+                                    {
+                                        HostIP = spec.PortBinding.HostAddress,
+                                        HostPort = spec.PortBinding.HostPort.ToString(CultureInfo.InvariantCulture)
+                                    }
+                                ]
+                            },
                         Mounts =
                         [
                             new Mount { Type = "volume", Source = spec.VolumeName, Target = spec.VolumeTarget }
@@ -162,6 +181,29 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
         InvokeAsync($"start container {name}", cancellationToken, () =>
             Client.Containers.StartContainerAsync(name, new ContainerStartParameters(), cancellationToken));
 
+    public Task StopContainerAsync(string name, CancellationToken cancellationToken) =>
+        InvokeAsync($"stop container {name}", cancellationToken, () =>
+            // A database server needs its time to write out what it holds before it is killed.
+            Client.Containers.StopContainerAsync(
+                name,
+                new ContainerStopParameters { WaitBeforeKillSeconds = StopTimeoutSeconds },
+                cancellationToken));
+
+    public Task RenameContainerAsync(string name, string newName, CancellationToken cancellationToken) =>
+        InvokeAsync($"rename container {name}", cancellationToken, () =>
+            Client.Containers.RenameContainerAsync(name, new ContainerRenameParameters { NewName = newName }, cancellationToken));
+
+    public Task<IReadOnlySet<int>> ListPublishedHostPortsAsync(CancellationToken cancellationToken) =>
+        InvokeAsync<IReadOnlySet<int>>("list published ports", cancellationToken, async () =>
+        {
+            var containers = await Client.Containers.ListContainersAsync(new ContainersListParameters { All = true }, cancellationToken);
+            return containers
+                .SelectMany(container => container.Ports ?? [])
+                .Where(port => port.PublicPort != 0)
+                .Select(port => (int)port.PublicPort)
+                .ToHashSet();
+        });
+
     public Task RemoveContainerAsync(string name, CancellationToken cancellationToken) =>
         IgnoreNotFoundAsync($"remove container {name}", cancellationToken, () =>
             // RemoveVolumes only covers anonymous volumes; the instance's named volume is kept.
@@ -195,6 +237,25 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
             _client.Value.Dispose();
         }
     }
+
+    private const uint StopTimeoutSeconds = 60;
+
+    private static string TcpPort(int port) => $"{port.ToString(CultureInfo.InvariantCulture)}/tcp";
+
+    // What the container is configured to publish, which is there whether or not it is running.
+    private static List<DockerPortBinding> PortBindingsOf(HostConfig? hostConfig) =>
+        (hostConfig?.PortBindings ?? new Dictionary<string, IList<PortBinding>>())
+            .SelectMany(entry => (entry.Value ?? []).Select(binding => new DockerPortBinding(
+                int.TryParse(entry.Key.Split('/')[0], NumberStyles.None, CultureInfo.InvariantCulture, out var containerPort) ? containerPort : 0,
+                // Docker leaves the address out when a port is bound on every interface.
+                string.IsNullOrEmpty(binding.HostIP) ? "0.0.0.0" : binding.HostIP,
+                int.TryParse(binding.HostPort, NumberStyles.None, CultureInfo.InvariantCulture, out var hostPort) ? hostPort : 0)))
+            .ToList();
+
+    // How the Docker Engine, on Linux and in Docker Desktop, says that a host port is taken.
+    private static bool SaysPortIsTaken(DockerApiException exception) =>
+        new[] { "port is already allocated", "address already in use", "ports are not available" }
+            .Any(phrase => (exception.ResponseBody ?? exception.Message).Contains(phrase, StringComparison.OrdinalIgnoreCase));
 
     private static DockerContainerState ToState(ContainerState state) => state.Status switch
     {
@@ -255,6 +316,10 @@ public sealed class DockerEngine(IOptions<DockerOptions> options) : IDockerEngin
         catch (DockerEngineException)
         {
             throw;
+        }
+        catch (DockerApiException exception) when (SaysPortIsTaken(exception))
+        {
+            throw new DockerEngineException(DockerFailure.PortUnavailable, $"Docker could not {operation}: a host port is taken", exception);
         }
         catch (DockerApiException exception)
         {

@@ -73,6 +73,13 @@ services:
       # it reaches their databases. Not "aurora-db", the default of an Aurora run directly on the
       # host, so the two never claim the same network.
       Docker__NetworkName: aurora-instances
+      # Where an instance's database port is published once an administrator enables external
+      # access for it (none is before that). The address is one of this machine's, not of the
+      # aurora container: 127.0.0.1 is this machine only. See docs/security.md before widening it.
+      ExternalAccess__BindAddress: ${AURORA_DB_BIND:-127.0.0.1}
+      ExternalAccess__AdvertisedHost: ${AURORA_DB_HOST:-}
+      ExternalAccess__PortRangeStart: ${AURORA_DB_PORT_START:-15432}
+      ExternalAccess__PortRangeEnd: ${AURORA_DB_PORT_END:-16432}
       Backups__StorageType: ${AURORA_BACKUP_STORAGE:-local}
       # S3 defaults to the LocalStack service below, so AURORA_BACKUP_STORAGE=s3 works with nothing
       # else set. "-" rather than ":-" on purpose: a variable set to nothing in .env stays empty,

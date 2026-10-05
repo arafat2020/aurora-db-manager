@@ -15,6 +15,13 @@ public sealed class InstanceConfiguration : IEntityTypeConfiguration<Instance>
             table.HasCheckConstraint("ck_instances_cpu", "cpu > 0");
             table.HasCheckConstraint("ck_instances_memory_mb", "memory_mb > 0");
             table.HasCheckConstraint("ck_instances_storage_gb", "storage_gb > 0");
+            // Enabled with a port, or disabled without one; never anything in between.
+            table.HasCheckConstraint(
+                "ck_instances_external_access",
+                "(external_access_enabled AND external_port IS NOT NULL) OR (NOT external_access_enabled AND external_port IS NULL)");
+            table.HasCheckConstraint(
+                "ck_instances_external_port",
+                $"external_port IS NULL OR (external_port >= {Instance.MinExternalPort} AND external_port <= {Instance.MaxExternalPort})");
         });
 
         builder.HasKey(i => i.Id).HasName("pk_instances");
@@ -36,6 +43,15 @@ public sealed class InstanceConfiguration : IEntityTypeConfiguration<Instance>
         builder.Property(i => i.ErrorCode).HasColumnName("error_code").HasMaxLength(Instance.ErrorCodeMaxLength);
         builder.Property(i => i.ErrorMessage).HasColumnName("error_message").HasMaxLength(Instance.ErrorMessageMaxLength);
 
+        // Concurrency token: of two requests that change an instance's external access at the same
+        // time, the second finds it changed and is refused.
+        builder.Property(i => i.ExternalAccessEnabled).HasColumnName("external_access_enabled")
+            .HasDefaultValue(false)
+            .IsConcurrencyToken();
+        builder.Property(i => i.ExternalPort).HasColumnName("external_port");
+
         builder.HasIndex(i => i.CreatedAt).HasDatabaseName("ix_instances_created_at");
+        // One host port, one instance: what makes allocating a port safe against a concurrent allocation.
+        builder.HasIndex(i => i.ExternalPort).HasDatabaseName("ux_instances_external_port").IsUnique();
     }
 }

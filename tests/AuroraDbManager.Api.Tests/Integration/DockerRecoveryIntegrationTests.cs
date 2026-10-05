@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Infrastructure.Docker;
@@ -39,6 +40,7 @@ public sealed class DockerRecoveryIntegrationTests : IAsyncLifetime
             new DockerImageResolver(),
             new InMemoryInstanceSecretStore(),
             Options.Create(_options),
+            Options.Create(new ExternalAccessOptions()),
             TimeProvider.System,
             NullLogger<DockerInstanceProvisioner>.Instance);
     }

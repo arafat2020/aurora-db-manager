@@ -482,8 +482,11 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         // What Docker calls things stays in Docker, and the record is as it was: health only looks.
         foreach (var html in new[] { healthy, notAnswering, stopped, missing, unknown })
         {
-            Assert.DoesNotContain(container, html, StringComparison.Ordinal);
-            Assert.DoesNotContain("container", html, StringComparison.OrdinalIgnoreCase);
+            // The Health section, that is; where the server is on the Docker network is the Connection section's to say.
+            var health = Regex.Match(html, "<section class=\"section\" aria-labelledby=\"health-title\">.*?</section>").Value;
+            Assert.NotEmpty(health);
+            Assert.DoesNotContain(container, health, StringComparison.Ordinal);
+            Assert.DoesNotContain("container", health, StringComparison.OrdinalIgnoreCase);
             Assert.Matches("<h1>production-db</h1> <span class=\"badge badge-success\"><svg.*?</svg> Running</span>", html);
         }
 
@@ -908,10 +911,16 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         foreach (var html in pages)
         {
             Assert.DoesNotContain(password, html, StringComparison.Ordinal);
+            // The Connection section says where the password goes and that it is not shown; nothing
+            // else on a page has reason to mention one, and nothing anywhere holds one.
+            var outsideConnection = Regex.Replace(html, "<section class=\"section\" aria-labelledby=\"connection-title\">.*?</section>", string.Empty, RegexOptions.Singleline);
             foreach (var word in new[] { "password", "secret", "connection string", "POSTGRES_PASSWORD" })
             {
-                Assert.DoesNotContain(word, html, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(word, outsideConnection, StringComparison.OrdinalIgnoreCase);
             }
+
+            Assert.DoesNotContain("POSTGRES_PASSWORD", html, StringComparison.Ordinal);
+            Assert.DoesNotMatch("(?i)password\\s*[=:]\\s*[^&<\\s]", html.Replace("postgres:&lt;password&gt;", string.Empty, StringComparison.Ordinal));
 
             // The only hidden fields of any form are the antiforgery token and the framework's
             // note of which fields are numbers; neither holds anything of an instance.

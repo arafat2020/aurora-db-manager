@@ -29,6 +29,12 @@ public sealed class FakeDockerEngine : IDockerEngine
     /// <summary>Exit code of commands run in containers; 0 means the database is ready.</summary>
     public Func<int> Exec { get; set; } = () => 0;
 
+    /// <summary>Host ports that containers which are not in this engine's collections are published on.</summary>
+    public HashSet<int> OtherPublishedHostPorts { get; } = [];
+
+    /// <summary>Host ports taken by something Docker does not list: starting a container that publishes on one fails.</summary>
+    public HashSet<int> HostPortsTakenOutsideDocker { get; } = [];
+
     public int CountCalls(string operation) => Calls.Count(call => call.StartsWith(operation + " ", StringComparison.Ordinal));
 
     /// <summary>Makes every call of <paramref name="operation"/> (a method name) fail.</summary>
@@ -108,7 +114,8 @@ public sealed class FakeDockerEngine : IDockerEngine
             spec.Image,
             DockerContainerState.Created,
             spec.Labels,
-            [new DockerMount(spec.VolumeName, spec.VolumeTarget)]);
+            [new DockerMount(spec.VolumeName, spec.VolumeTarget)],
+            PortBindings: spec.PortBinding is null ? null : [spec.PortBinding]);
         return Task.CompletedTask;
     }
 
@@ -133,11 +140,52 @@ public sealed class FakeDockerEngine : IDockerEngine
     public Task StartContainerAsync(string name, CancellationToken cancellationToken)
     {
         Record(nameof(StartContainerAsync), name, cancellationToken);
+        if ((Containers[name].PortBindings ?? []).Any(binding => HostPortsTakenOutsideDocker.Contains(binding.HostPort)))
+        {
+            throw new DockerEngineException(
+                DockerFailure.PortUnavailable, "a host port is taken", new InvalidOperationException("bind: address already in use raw-daemon-detail"));
+        }
+
         Containers[name] = Containers[name] with
         {
             State = ContainersExitAfterStart ? DockerContainerState.Exited : DockerContainerState.Running
         };
         return Task.CompletedTask;
+    }
+
+    public Task StopContainerAsync(string name, CancellationToken cancellationToken)
+    {
+        Record(nameof(StopContainerAsync), name, cancellationToken);
+        if (Containers[name].State == DockerContainerState.Running)
+        {
+            Containers[name] = Containers[name] with { State = DockerContainerState.Exited };
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task RenameContainerAsync(string name, string newName, CancellationToken cancellationToken)
+    {
+        Record(nameof(RenameContainerAsync), $"{name} {newName}", cancellationToken);
+        if (Containers.ContainsKey(newName))
+        {
+            throw new DockerEngineException(DockerFailure.Conflict, "name already in use");
+        }
+
+        Containers[newName] = Containers[name] with { Name = newName };
+        Containers.Remove(name);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlySet<int>> ListPublishedHostPortsAsync(CancellationToken cancellationToken)
+    {
+        Record(nameof(ListPublishedHostPortsAsync), string.Empty, cancellationToken);
+        return Task.FromResult<IReadOnlySet<int>>(Containers.Values
+            .Where(container => container.State == DockerContainerState.Running)
+            .SelectMany(container => container.PortBindings ?? [])
+            .Select(binding => binding.HostPort)
+            .Concat(OtherPublishedHostPorts)
+            .ToHashSet());
     }
 
     public Task RemoveContainerAsync(string name, CancellationToken cancellationToken)

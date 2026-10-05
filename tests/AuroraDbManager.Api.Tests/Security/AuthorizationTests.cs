@@ -59,6 +59,13 @@ public sealed class AuthorizationTests : IDisposable
         { "GET", $"/api/v1/instances/{Id}", "viewer" },
         { "GET", $"/api/v1/instances/{Id}/health", "viewer" },
 
+        // Reaching an instance from outside the Docker network: an administrator's to turn on and
+        // off, like the instance itself; where it is reached is anyone's to look at.
+        { "POST", $"/api/v1/instances/{Id}/external-access", "admin" },
+        { "DELETE", $"/api/v1/instances/{Id}/external-access", "admin" },
+        { "GET", $"/api/v1/instances/{Id}/connection", "viewer" },
+        { "GET", $"/api/v1/databases/{Id}/connection", "viewer" },
+
         // Databases.
         { "POST", $"/api/v1/instances/{Id}/databases", "operator" },
         { "DELETE", $"/api/v1/databases/{Id}", "operator" },

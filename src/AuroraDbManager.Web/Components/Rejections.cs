@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Errors;
@@ -49,6 +50,13 @@ public static class Rejections
             ErrorCodes.RestoreOperationInProgress, "Database cannot be deleted while it is being restored."),
         _ => null
     };
+
+    /// <summary>External access was not changed. The status, code and sentence are the ones the API answers with.</summary>
+    public static Rejection For(ExternalAccessResult result)
+    {
+        var (status, code, message) = ExternalAccessErrors.For(result);
+        return new Rejection(status, code, message);
+    }
 
     /// <summary>The instance's resources could not be removed; nothing was deleted. The exception's code and message are written for clients.</summary>
     public static Rejection For(InstanceProvisioningException exception) =>

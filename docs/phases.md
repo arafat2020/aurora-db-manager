@@ -303,6 +303,36 @@ Build a self-managed database service that allows users to:
 
 ---
 
+# 🔌 Phase 13.1 — Database Connectivity & Controlled Port Exposure
+
+## Objectives
+
+* Let a client outside Docker connect to an instance, when an administrator says so
+* Keep every instance private until then
+
+## Tasks
+
+* [x] Persist external access on the instance (`external_access_enabled`, `external_port`)
+* [x] Allocate host ports from a configured range, one per instance, safely under concurrency
+* [x] Publish the engine's port in Docker (5432 PostgreSQL, 3306 MySQL) on the configured bind address
+* [x] Enable and disable external access by replacing the container on the same data volume
+* [x] Verify the container's published port during provisioning and after a restart
+* [x] Connection information in the API and the UI, without passwords
+* [x] Administrators only; confirmation page in the UI
+
+## Output
+
+* An instance's database reachable on `<bind address>:<host port>` once enabled, private otherwise
+
+## Not included
+
+* TLS for database connections, proxies, tunnels, firewall automation
+* Showing or rotating the instance's administrator password, and per-database users
+
+See [security.md](security.md#external-database-access) and [ui.md](ui.md#connection).
+
+---
+
 # 🚫 What NOT to Build (Yet)
 
 Avoid these early:

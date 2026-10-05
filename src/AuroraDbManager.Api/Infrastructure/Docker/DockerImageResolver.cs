@@ -7,6 +7,7 @@ namespace AuroraDbManager.Api.Infrastructure.Docker;
 /// <param name="Image">Docker image reference, <c>repository:tag</c>.</param>
 /// <param name="DataPath">Path inside the container where the instance's volume is mounted.</param>
 /// <param name="AdminPasswordVariable">Environment variable the image reads the administrator password from.</param>
+/// <param name="Port">The TCP port the database server listens on inside the container; the only port ever published.</param>
 /// <param name="ReadinessCommand">
 /// Command run inside the container that exits with 0 once the database accepts connections. It
 /// connects over TCP on purpose: while an image initializes a new data directory it runs a
@@ -16,6 +17,7 @@ public sealed record DatabaseImage(
     string Image,
     string DataPath,
     string AdminPasswordVariable,
+    int Port,
     IReadOnlyList<string> ReadinessCommand);
 
 /// <summary>
@@ -54,8 +56,8 @@ public sealed class DockerImageResolver
     }
 
     private static DatabaseImage Postgres(string image) =>
-        new(image, "/var/lib/postgresql/data", "POSTGRES_PASSWORD", PostgresReadiness);
+        new(image, "/var/lib/postgresql/data", "POSTGRES_PASSWORD", EngineDefaults.Port(InstanceEngine.Postgres), PostgresReadiness);
 
     private static DatabaseImage Mysql(string image) =>
-        new(image, "/var/lib/mysql", "MYSQL_ROOT_PASSWORD", MysqlReadiness);
+        new(image, "/var/lib/mysql", "MYSQL_ROOT_PASSWORD", EngineDefaults.Port(InstanceEngine.Mysql), MysqlReadiness);
 }

@@ -19,6 +19,10 @@ public static class Offered
     public static bool DeleteInstance(ClaimsPrincipal user, InstanceResponse instance) =>
         user.IsAdmin() && instance.Status != InstanceStatus.Provisioning;
 
+    /// <summary>Turning external access on or off restarts the server, so there has to be one that is running.</summary>
+    public static bool ChangeExternalAccess(ClaimsPrincipal user, InstanceResponse instance) =>
+        user.IsAdmin() && instance.Status == InstanceStatus.Running;
+
     public static bool CreateDatabase(ClaimsPrincipal user, InstanceResponse instance) =>
         user.IsOperator() && instance.Status == InstanceStatus.Running;
 

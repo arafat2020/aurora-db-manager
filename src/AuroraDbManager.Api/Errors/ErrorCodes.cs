@@ -6,6 +6,9 @@ public static class ErrorCodes
     public const string InstanceNotFound = "INSTANCE_NOT_FOUND";
     public const string InstanceProvisioning = "INSTANCE_PROVISIONING";
     public const string InstanceNotReady = "INSTANCE_NOT_READY";
+    public const string ExternalAccessAlreadyEnabled = "EXTERNAL_ACCESS_ALREADY_ENABLED";
+    public const string ExternalAccessAlreadyDisabled = "EXTERNAL_ACCESS_ALREADY_DISABLED";
+    public const string PortAllocationFailed = "PORT_ALLOCATION_FAILED";
     public const string DatabaseNotFound = "DATABASE_NOT_FOUND";
     public const string DatabaseNameInvalid = "DATABASE_NAME_INVALID";
     public const string DatabaseAlreadyExists = "DATABASE_ALREADY_EXISTS";

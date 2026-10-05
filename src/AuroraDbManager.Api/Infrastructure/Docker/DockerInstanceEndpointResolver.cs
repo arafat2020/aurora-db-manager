@@ -56,15 +56,8 @@ public sealed class DockerInstanceEndpointResolver(IDockerEngine docker, IOption
             throw Unavailable("The instance's database server is not attached to the instance network.");
         }
 
-        return new InstanceEndpoint(address, PortOf(instance.Engine));
+        return new InstanceEndpoint(address, EngineDefaults.Port(instance.Engine));
     }
-
-    private static int PortOf(InstanceEngine engine) => engine switch
-    {
-        InstanceEngine.Postgres => 5432,
-        InstanceEngine.Mysql => 3306,
-        _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, null)
-    };
 
     private static DatabaseOperationException Unavailable(string message, Exception? innerException = null) =>
         new(DatabaseErrorCodes.DatabaseEngineUnavailable, message, innerException);

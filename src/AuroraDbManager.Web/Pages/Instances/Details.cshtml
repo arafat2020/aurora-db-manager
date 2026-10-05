@@ -102,6 +102,33 @@
     </div>
 </section>
 
+<section class="section" aria-labelledby="connection-title">
+    <div class="section-header">
+        <h2 id="connection-title">Connection</h2>
+        @if (Offered.ChangeExternalAccess(User, instance))
+        {
+            <span class="section-actions">
+                <a class="button" href="@Url.Content("~" + Routes.ExternalAccess(instance.Id))">@(Model.Connection.External.Enabled ? "Disable external access" : "Enable external access")</a>
+            </span>
+        }
+    </div>
+    <div class="card">
+        <div class="card-body stack">
+            <partial name="_ConnectionEndpoints" model="@(new ConnectionView(Model.Connection))" />
+            @if (Model.Connection.External.Enabled)
+            {
+                <div class="copy">
+                    <pre class="snippet" id="connection-details">Engine: @Labels.For(instance.Engine)
+Host: @(Model.Connection.External.Host ?? "(this server's address)")
+Port: @Model.Connection.External.Port
+Username: @Model.Connection.Username</pre>
+                    <button type="button" class="button" data-copy="#connection-details" hidden>Copy connection details</button>
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
 <section class="section" aria-labelledby="databases-title">
     <div class="section-header">
         <h2 id="databases-title">Databases</h2>

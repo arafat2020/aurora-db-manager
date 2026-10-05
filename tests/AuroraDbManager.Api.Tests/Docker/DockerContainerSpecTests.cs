@@ -15,7 +15,7 @@ public sealed class DockerContainerSpecTests
     {
         var instance = NewInstance(InstanceEngine.Postgres, "16");
 
-        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db");
+        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db", "127.0.0.1");
 
         Assert.Equal($"aurora-instance-{instance.Id}", spec.Name);
         Assert.Equal("postgres:16", spec.Image);
@@ -31,7 +31,7 @@ public sealed class DockerContainerSpecTests
     {
         var instance = NewInstance(InstanceEngine.Mysql, "8.4");
 
-        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db");
+        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db", "127.0.0.1");
 
         Assert.Equal("mysql:8.4", spec.Image);
         Assert.Equal("/var/lib/mysql", spec.VolumeTarget);
@@ -46,7 +46,7 @@ public sealed class DockerContainerSpecTests
     {
         var instance = NewInstance(InstanceEngine.Postgres, "16", cpu, memoryMb);
 
-        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db");
+        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db", "127.0.0.1");
 
         Assert.Equal(expectedNanoCpus, spec.NanoCpus);
         Assert.Equal(expectedBytes, spec.MemoryBytes);
@@ -57,7 +57,7 @@ public sealed class DockerContainerSpecTests
     {
         var instance = NewInstance(InstanceEngine.Postgres, "16");
 
-        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db");
+        var spec = DockerContainerSpec.For(instance, Images.Resolve(instance.Engine, instance.Version), "s3cret", "aurora-db", "127.0.0.1");
 
         Assert.DoesNotContain("s3cret", spec.ToString());
     }

@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Infrastructure.Docker;
@@ -18,6 +19,8 @@ public sealed class DockerInstanceProvisionerTests
 
     private readonly Instance _instance = Instance.Create("orders", InstanceEngine.Postgres, "16", 2, 1024, 20, DateTime.UtcNow);
 
+    private readonly ExternalAccessOptions _externalAccess = new();
+
     public DockerInstanceProvisionerTests()
     {
         // No waiting between readiness checks; the stepping clock makes the 10s timeout pass after
@@ -28,7 +31,7 @@ public sealed class DockerInstanceProvisionerTests
             ReadinessTimeoutSeconds = 10,
             ReadinessPollIntervalMilliseconds = 0
         });
-        _provisioner = new DockerInstanceProvisioner(_docker, new DockerImageResolver(), _secrets, options, _time, _logger);
+        _provisioner = new DockerInstanceProvisioner(_docker, new DockerImageResolver(), _secrets, options, Options.Create(_externalAccess), _time, _logger);
     }
 
     private string ContainerName => DockerResourceNaming.ContainerName(_instance.Id);

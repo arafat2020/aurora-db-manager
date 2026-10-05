@@ -11,6 +11,8 @@ public static class Routes
 
     public static string DeleteInstance(Guid id) => $"{Instance(id)}/delete";
 
+    public static string ExternalAccess(Guid id) => $"{Instance(id)}/external-access";
+
     public static string Databases(Guid instanceId) => $"{Instance(instanceId)}/databases";
 
     public static string CreateDatabase(Guid instanceId) => $"{Databases(instanceId)}/create";

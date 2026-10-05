@@ -277,12 +277,32 @@ public sealed partial class ExecutionAndPathSafetyTests : IDisposable
     public void ContainerSpec_HasNoWayToAskForAHostPath_APort_OrPrivileges()
     {
         // What a container is created from is exactly this, and none of it is a bind mount, a
-        // published port, a capability or a privilege. A new member here is a decision to review.
+        // capability or a privilege. A new member here is a decision to review. The one published
+        // port there can be is not asked for by anyone: see the next test.
         var properties = typeof(DockerContainerSpec).GetProperties().Select(property => property.Name).Order();
 
         Assert.Equal(
-            ["Environment", "Image", "Labels", "MemoryBytes", "Name", "NanoCpus", "NetworkName", "VolumeName", "VolumeTarget"],
+            ["Environment", "Image", "Labels", "MemoryBytes", "Name", "NanoCpus", "NetworkName", "PortBinding", "VolumeName", "VolumeTarget"],
             properties);
+    }
+
+    [Fact]
+    public void ContainerSpec_PublishesNothing_UnlessTheInstancesRecordSaysSo_AndThenOnlyTheEnginesPort()
+    {
+        var images = new DockerImageResolver();
+        var instance = Domain.Instances.Instance.Create("orders", Domain.Instances.InstanceEngine.Postgres, "16", 1, 512, 1, DateTime.UtcNow);
+        var image = images.Resolve(instance.Engine, instance.Version);
+
+        // As created, and for as long as nobody enables external access: no port of the host.
+        Assert.Null(DockerContainerSpec.For(instance, image, "s3cret", "aurora-db", "127.0.0.1").PortBinding);
+
+        instance.MarkRunning(DateTime.UtcNow);
+        instance.EnableExternalAccess(15432, DateTime.UtcNow);
+        var spec = DockerContainerSpec.For(instance, image, "s3cret", "aurora-db", "127.0.0.1");
+
+        // One binding: the engine's port from the catalog, the port on the record, the server's address.
+        Assert.Equal(new DockerPortBinding(5432, "127.0.0.1", 15432), spec.PortBinding);
+        Assert.Equal(3306, images.Resolve(Domain.Instances.InstanceEngine.Mysql, "8.4").Port);
     }
 
     [Fact]

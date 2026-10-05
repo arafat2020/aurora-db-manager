@@ -819,6 +819,37 @@ a.stat:hover {
   margin-top: var(--space-2);
 }
 
+/* Text that is there to be copied: a connection string, connection details. */
+.snippet {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.copy .snippet {
+  justify-self: stretch;
+}
+
+.subheading {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 /* Something on the page is on its way to another status. */
 .in-progress {
   display: flex;

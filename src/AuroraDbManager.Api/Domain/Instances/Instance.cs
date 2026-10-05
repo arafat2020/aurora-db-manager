@@ -13,6 +13,10 @@ public sealed class Instance
     public const int ErrorCodeMaxLength = 64;
     public const int ErrorMessageMaxLength = 1024;
 
+    /// <summary>Host ports below this need privileges and belong to the system; none is ever published on.</summary>
+    public const int MinExternalPort = 1024;
+    public const int MaxExternalPort = 65535;
+
     private Instance()
     {
     }
@@ -31,6 +35,15 @@ public sealed class Instance
     /// <summary>Why the instance is <see cref="InstanceStatus.Failed"/>; null otherwise.</summary>
     public string? ErrorCode { get; private set; }
     public string? ErrorMessage { get; private set; }
+
+    /// <summary>
+    /// Whether the instance's database port is published on the host. Off for a new instance, and
+    /// only ever turned on by <see cref="EnableExternalAccess"/>.
+    /// </summary>
+    public bool ExternalAccessEnabled { get; private set; }
+
+    /// <summary>The host port the database port is published on; set exactly while <see cref="ExternalAccessEnabled"/> is.</summary>
+    public int? ExternalPort { get; private set; }
 
     public static Instance Create(
         string name,
@@ -85,6 +98,41 @@ public sealed class Instance
         Status = InstanceStatus.Failed;
         ErrorCode = Truncate(errorCode, ErrorCodeMaxLength);
         ErrorMessage = Truncate(errorMessage, ErrorMessageMaxLength);
+        UpdatedAt = utcNow;
+    }
+
+    /// <summary>
+    /// Records that the database port is published on <paramref name="hostPort"/>. Only a running
+    /// instance has a server whose port can be published.
+    /// </summary>
+    public void EnableExternalAccess(int hostPort, DateTime utcNow)
+    {
+        EnsureStatus(nameof(EnableExternalAccess), InstanceStatus.Running);
+        if (ExternalAccessEnabled)
+        {
+            throw new InvalidOperationException($"Cannot {nameof(EnableExternalAccess)} instance {Id}: external access is already enabled.");
+        }
+
+        if (hostPort is < MinExternalPort or > MaxExternalPort)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hostPort), hostPort, $"A host port is between {MinExternalPort} and {MaxExternalPort}.");
+        }
+
+        ExternalAccessEnabled = true;
+        ExternalPort = hostPort;
+        UpdatedAt = utcNow;
+    }
+
+    /// <summary>Records that the database port is no longer published, and gives its host port up.</summary>
+    public void DisableExternalAccess(DateTime utcNow)
+    {
+        if (!ExternalAccessEnabled)
+        {
+            throw new InvalidOperationException($"Cannot {nameof(DisableExternalAccess)} instance {Id}: external access is not enabled.");
+        }
+
+        ExternalAccessEnabled = false;
+        ExternalPort = null;
         UpdatedAt = utcNow;
     }
 

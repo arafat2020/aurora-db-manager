@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -89,6 +90,16 @@ public static class AuroraHost
         services.AddSingleton<DockerImageResolver>();
         services.AddScoped<IInstanceProvisioner, DockerInstanceProvisioner>();
         services.AddSingleton<IInstanceRuntimeProbe, DockerInstanceRuntimeProbe>();
+
+        // Reaching instances from outside the Docker network: off for every instance until an
+        // administrator turns it on for one. See ExternalAccessOptions.
+        services.AddOptions<ExternalAccessOptions>()
+            .Bind(configuration.GetSection(ExternalAccessOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ExternalAccessOptions>, ExternalAccessOptionsValidator>();
+        services.AddSingleton<IInstanceNetwork, DockerInstanceNetwork>();
+        services.AddScoped<ExternalPortAllocator>();
+        services.AddScoped<InstanceConnectivityService>();
 
         // Database managers reach an instance's server on the Docker network; see DockerInstanceEndpointResolver.
         services.AddOptions<DatabaseManagerOptions>()

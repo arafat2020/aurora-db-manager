@@ -169,12 +169,13 @@ src/AuroraDbManager.Web/
 │   │   ├── _Pager.cshtml          which part of a list is shown, and the way to the rest
 │   │   ├── _InProgress.cshtml     work is in progress: refresh
 │   │   ├── _DatabaseTable.cshtml  the databases of an instance
+│   │   ├── _ConnectionEndpoints.cshtml  where a server is reached, inside and outside Docker
 │   │   ├── _RecentJobs.cshtml     the last few operations on an instance or a database
 │   │   ├── _Icon.cshtml           the icons, inline
 │   │   └── _ConfirmDialog.cshtml  the one confirmation dialog
 │   ├── Index.cshtml               the overview
 │   ├── Login / Logout / Error
-│   ├── Instances/                 list, create, details, delete
+│   ├── Instances/                 list, create, details, delete, external access
 │   │   └── Databases/             an instance's databases: list, create, details, delete
 │   ├── Jobs, Users                read-only lists
 │   ├── Backups, Schedules, Monitoring   placeholders
@@ -263,11 +264,12 @@ Razor Page  ──►  InstanceService / DatabaseService / InstanceHealthService
 | --- | --- | --- |
 | `/instances` | The instances, 20 to a page (`?page=2`) | `InstanceService.ListAsync` |
 | `/instances/create` | The form that creates one | `InstanceService.CreateAsync` |
-| `/instances/{id}` | One instance: overview, health, its databases, recent operations | `InstanceService.GetAsync`, `InstanceHealthService.GetAsync`, `DatabaseService.ListAsync`, `JobService.ListAsync` |
+| `/instances/{id}` | One instance: overview, health, connection, its databases, recent operations | `InstanceService.GetAsync`, `InstanceHealthService.GetAsync`, `InstanceConnectivityService.GetAsync`, `DatabaseService.ListAsync`, `JobService.ListAsync` |
 | `/instances/{id}/delete` | The question, and the form that deletes | `InstanceService.DeleteAsync` |
+| `/instances/{id}/external-access` | The question, and the forms that enable and disable external access | `InstanceConnectivityService.EnableAsync`, `DisableAsync` |
 | `/instances/{id}/databases` | The instance's databases, 20 to a page | `DatabaseService.ListAsync` |
 | `/instances/{id}/databases/create` | The form that creates one | `DatabaseService.CreateAsync` |
-| `/instances/{id}/databases/{databaseId}` | One database: overview, recent operations | `DatabaseService.GetAsync`, `JobService.ListAsync` |
+| `/instances/{id}/databases/{databaseId}` | One database: overview, connection, recent operations | `DatabaseService.GetAsync`, `InstanceConnectivityService.GetForDatabaseAsync`, `JobService.ListAsync` |
 | `/instances/{id}/databases/{databaseId}/delete` | The question, and the form that deletes | `DatabaseService.DeleteAsync` |
 
 Ids are GUIDs; anything else in their place is no page. A database is always addressed under its
@@ -282,6 +284,7 @@ so they are reached through *Instances*.
 | See instances, their details, health and databases | ✔ | ✔ | ✔ |
 | Create and delete a database | | ✔ | ✔ |
 | Create and delete an instance | | | ✔ |
+| Enable and disable external access | | | ✔ |
 
 The pages that create and delete carry the policy of the API endpoint that does the same
 (`[Authorize(Policy = AuroraPolicies.Admin)]` or `…Operator`), for the form and for its
@@ -343,16 +346,64 @@ service, and so is one the page could not have known about, such as a backup in 
 The *Health* section of an instance's page is `InstanceHealthService.GetAsync`, the check behind
 `GET /api/v1/instances/{id}/health`, made once when the page is rendered and repeated by *Check
 again* (a link to the page). It is shown as **Healthy**, **Degraded** or **Unhealthy** with a
-sentence, whether the server is running and whether connections are accepted. Container names
-and other Docker details are not shown. Health is an observation and changes nothing: an
+sentence, whether the server is running and whether connections are accepted. Docker details
+are not part of it. Health is an observation and changes nothing: an
 instance can be *Running* on record and *Unhealthy* in fact, and the page shows both. While an
 instance is being provisioned there is no server to check, and the page says so rather than
 reporting it as unhealthy.
 
+### Connection
+
+An instance's page and each database's page have a **Connection** section. It is
+`InstanceConnectivityService`, the service behind `GET /api/v1/instances/{id}/connection` and
+`GET /api/v1/databases/{id}/connection`; the pages add nothing to what it says.
+
+- **From inside the Docker network**, always: the network's name, the host name the server
+  answers to there (the instance's container name, which is what another container on that
+  network connects to), the engine's port, and the user name.
+- **From outside the Docker network**: *External access: Disabled* for every instance until an
+  administrator enables it; then the host, the host port, the address the port is bound to with
+  what that means (*this server only*, *one network interface*, *every network interface*), the
+  protocol and the user name.
+- On a database's page, in addition, the database name and **connection string templates**, such
+  as `postgresql://postgres:<password>@127.0.0.1:15432/app`. The password is a placeholder.
+
+A *Copy* button next to each block copies its text. It is progressive enhancement: hidden unless
+script runs in a context where the browser allows copying (HTTPS or localhost), and the text is
+on the page to be selected either way.
+
+**The pages say what Aurora knows.** *Enabled* means the port is published in Docker on that
+address. The pages never say a database is reachable from the internet or from any particular
+place: that depends on the server's firewall and network, which Aurora does not configure
+([security.md](security.md#external-database-access)).
+
+### Enabling and disabling external access
+
+Administrators see *Enable external access* (or *Disable…*) in an instance's Connection section
+while the instance is running. It leads to `/instances/{id}/external-access`, a page that asks
+before anything happens:
+
+- what will be exposed, on which bind address and what that address means;
+- that Aurora publishes a port in Docker and does not touch any firewall;
+- that every database of the instance becomes reachable on that port;
+- that **the database server is restarted**, with its data kept, and is briefly unavailable.
+
+Only its form changes anything: a `POST` with an antiforgery token to `?handler=Enable` or
+`?handler=Disable`. The request returns when the server is running with the new configuration,
+which can take a while, so the button says *Restarting the database server…* meanwhile. The page
+it leads to says *External access enabled on host port 15432. The database server was
+restarted.*, and says it only then. Aurora picks the port; the form has no field for one.
+
+If the service refuses (the instance is not running, a job is at work in it, access is already
+in the requested state) or Docker fails, the confirmation page comes back with the stable code
+and sentence and the API's status (`409` or `503`), nothing was changed, and no success is shown.
+
 ### Credentials
 
 No page shows, embeds or logs a credential. The administrator password of an instance stays in
-the secret store, as it does for the API; the pages never ask for it.
+the secret store, as it does for the API; the pages never ask for it. Connection strings on the
+pages are templates with `<password>` in place of the password, and the only hidden field of any
+form is the antiforgery token.
 
 ## Styling
 
@@ -373,8 +424,9 @@ no web font; the UI uses the system font.
 
 `wwwroot/js/aurora.js` is progressive enhancement, well under two hundred lines: the menu button
 on small screens, closing the account menu, marking a submitted form as busy so it cannot be sent
-twice, the confirmation dialog, and reloading a page that shows work in progress (see
-[Work that takes a while](#work-that-takes-a-while)). It stores nothing, makes no request of its
+twice, the confirmation dialog, reloading a page that shows work in progress (see
+[Work that takes a while](#work-that-takes-a-while)), and the *Copy* buttons of the Connection
+sections, which write text that is already on the page to the clipboard. It stores nothing, makes no request of its
 own, and nothing depends on it. A later phase may add live updates (SignalR) for job and instance
 status; nothing has been prepared for that yet, on purpose.
 
@@ -392,6 +444,7 @@ Failures on a page are answered with a page; failures in the API with JSON, as b
 | Invalid input (`422`) | messages at the fields, on the form, with what was typed |
 | A list page that is not a page (`?page=0`) (`400`) | *That request could not be processed* |
 | An instance's server cannot be removed (`503`) | the service's message, on the delete page; nothing was deleted |
+| External access cannot be changed (`409`, `503`) | the service's message, on the confirmation page; nothing was changed |
 | Too many sign-in attempts (`429`) | *Too many attempts*, and when to try again |
 | Anything unexpected (`500`) | *Something went wrong* |
 

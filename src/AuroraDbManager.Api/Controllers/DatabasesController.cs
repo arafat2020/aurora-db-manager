@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Auth;
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Errors;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,7 @@ namespace AuroraDbManager.Api.Controllers;
 [ApiController]
 [Produces("application/json")]
 [Authorize(Policy = AuroraPolicies.Viewer)]
-public sealed class DatabasesController(DatabaseService databases) : ControllerBase
+public sealed class DatabasesController(DatabaseService databases, InstanceConnectivityService connectivity) : ControllerBase
 {
     private const string InstanceDatabasesRoute = "api/v1/instances/{instanceId:guid}/databases";
     private const string DatabaseRoute = "api/v1/databases/{id:guid}";
@@ -70,6 +71,22 @@ public sealed class DatabasesController(DatabaseService databases) : ControllerB
     {
         var database = await databases.GetAsync(id, cancellationToken);
         return database is null ? DatabaseNotFound() : Ok(database);
+    }
+
+    /// <summary>Says how the database is reached.</summary>
+    /// <remarks>
+    /// The database is in its instance's server, so it is reached where the instance is: see
+    /// <c>GET /api/v1/instances/{id}/connection</c>. In addition the response has connection URIs
+    /// for this database, in which the literal placeholder <c>&lt;password&gt;</c> stands where
+    /// the password goes. No password is ever part of the response.
+    /// </remarks>
+    [HttpGet(DatabaseRoute + "/connection")]
+    [ProducesResponseType<DatabaseConnectionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Connection(Guid id, CancellationToken cancellationToken)
+    {
+        var connection = await connectivity.GetForDatabaseAsync(id, cancellationToken);
+        return connection is null ? DatabaseNotFound() : Ok(connection);
     }
 
     /// <summary>Deletes a database and its data, in the background.</summary>

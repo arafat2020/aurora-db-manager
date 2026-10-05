@@ -13,6 +13,12 @@ public static class DockerProvisioningErrors
     public const string DockerContainerStartFailed = "DOCKER_CONTAINER_START_FAILED";
     public const string DockerResourceConflict = "DOCKER_RESOURCE_CONFLICT";
     public const string DockerResourceRemoveFailed = "DOCKER_RESOURCE_REMOVE_FAILED";
+
+    /// <summary>The instance's container could not be given the port configuration on the instance's record.</summary>
+    public const string DockerPortConfigurationFailed = "DOCKER_PORT_CONFIGURATION_FAILED";
+
+    /// <summary>The host port to publish on is taken by something else.</summary>
+    public const string PortAlreadyInUse = "PORT_ALREADY_IN_USE";
     public const string DatabaseContainerMissing = "DATABASE_CONTAINER_MISSING";
     public const string DatabaseContainerExited = "DATABASE_CONTAINER_EXITED";
     public const string DatabaseReadinessTimeout = "DATABASE_READINESS_TIMEOUT";

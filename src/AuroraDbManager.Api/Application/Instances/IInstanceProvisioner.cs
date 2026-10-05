@@ -16,10 +16,23 @@ public interface IInstanceProvisioner
     /// <summary>
     /// Makes sure the database of an already provisioned <paramref name="instance"/> is up: does
     /// nothing if it is, and starts it and waits for it to accept connections if it is stopped.
-    /// Never creates or replaces anything; if the instance's resources are missing or are not its
-    /// own, it throws <see cref="InstanceProvisioningException"/>.
+    /// A server that publishes something other than the instance's external-access state says is
+    /// brought in line with it, as <see cref="ApplyExternalAccessAsync"/> does. Nothing is created
+    /// for an instance that has no server, and no data is ever replaced; if the instance's
+    /// resources are missing or are not its own, it throws <see cref="InstanceProvisioningException"/>.
     /// </summary>
     Task EnsureRunningAsync(Instance instance, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Makes the database server of a provisioned <paramref name="instance"/> publish exactly what
+    /// the instance's external-access state says: its database port on the recorded host port, or
+    /// nothing. Does nothing if it already does. Otherwise the server is restarted with the new
+    /// configuration on the same data, which interrupts it briefly, and the call returns only once
+    /// the database accepts connections again. If that cannot be achieved, the server is put back
+    /// as it was and <see cref="InstanceProvisioningException"/> is thrown. The instance's data is
+    /// never removed, replaced or recreated here.
+    /// </summary>
+    Task ApplyExternalAccessAsync(Instance instance, CancellationToken cancellationToken);
 
     /// <summary>Lists every resource the provisioner manages, whether or not its instance still exists.</summary>
     Task<IReadOnlyList<ProvisionedResource>> ListResourcesAsync(CancellationToken cancellationToken);

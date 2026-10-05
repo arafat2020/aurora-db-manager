@@ -73,6 +73,13 @@ public sealed record StatusBadge(string Label, StatusTone Tone)
         _ => new("Unhealthy", StatusTone.Danger)
     };
 
+    /// <summary>
+    /// Whether a database port is published on the host. Enabled is not "good": it is something
+    /// to be aware of, and is marked that way.
+    /// </summary>
+    public static StatusBadge ForExternalAccess(bool enabled) =>
+        enabled ? new("Enabled", StatusTone.Warning) : new("Disabled", StatusTone.Neutral);
+
     public static StatusBadge ForEnabled(bool enabled) =>
         enabled ? new("Enabled", StatusTone.Success) : new("Disabled", StatusTone.Neutral);
 

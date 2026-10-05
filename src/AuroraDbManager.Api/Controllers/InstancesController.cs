@@ -1,4 +1,5 @@
 using AuroraDbManager.Api.Application.Auth;
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Errors;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,10 @@ namespace AuroraDbManager.Api.Controllers;
 [Route("api/v1/instances")]
 [Produces("application/json")]
 [Authorize(Policy = AuroraPolicies.Viewer)]
-public sealed class InstancesController(InstanceService instances, InstanceHealthService health) : ControllerBase
+public sealed class InstancesController(
+    InstanceService instances,
+    InstanceHealthService health,
+    InstanceConnectivityService connectivity) : ControllerBase
 {
     /// <summary>Creates an instance and starts provisioning it in the background.</summary>
     /// <remarks>
@@ -62,6 +66,79 @@ public sealed class InstancesController(InstanceService instances, InstanceHealt
     {
         var report = await health.GetAsync(id, cancellationToken);
         return report is null ? InstanceNotFound() : Ok(report);
+    }
+
+    /// <summary>Says how the instance's database server is reached.</summary>
+    /// <remarks>
+    /// <c>internal</c> is where the server is for containers attached to the instance network, and
+    /// is always there. <c>external</c> says whether the server's port is published on the Docker
+    /// host, and if so on which port and where clients are told to connect. A published port is
+    /// not thereby reachable from anywhere: that also depends on the address ports are bound to
+    /// (<c>bindAddress</c>) and on firewalls and networks, which Aurora does not configure. No
+    /// password is ever part of the response.
+    /// </remarks>
+    [HttpGet("{id:guid}/connection")]
+    [ProducesResponseType<InstanceConnectionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Connection(Guid id, CancellationToken cancellationToken)
+    {
+        var connection = await connectivity.GetAsync(id, cancellationToken);
+        return connection is null ? InstanceNotFound() : Ok(connection);
+    }
+
+    /// <summary>Publishes the instance's database port on a port of the Docker host.</summary>
+    /// <remarks>
+    /// Aurora picks the host port, from the configured range; a request cannot choose a port or an
+    /// address. The port is bound to the server's configured address (<c>ExternalAccess:BindAddress</c>,
+    /// by default <c>127.0.0.1</c>). <b>The instance's database server is restarted</b>, on the same
+    /// data, and is unavailable until it accepts connections again; the response is sent when it
+    /// does. The instance must be <c>running</c> (<c>409 INSTANCE_NOT_READY</c>) with no job in
+    /// progress (<c>409 DATABASE_OPERATION_IN_PROGRESS</c>, <c>BACKUP_OPERATION_IN_PROGRESS</c>,
+    /// <c>RESTORE_OPERATION_IN_PROGRESS</c>), and not have external access already
+    /// (<c>409 EXTERNAL_ACCESS_ALREADY_ENABLED</c>). If no port of the range is free the request
+    /// fails with <c>409 PORT_ALLOCATION_FAILED</c>; if Docker cannot apply the change, with
+    /// <c>503</c> and for instance <c>DOCKER_PORT_CONFIGURATION_FAILED</c>. A request that fails
+    /// changes nothing: the server keeps running, or is put back, as it was.
+    /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Admin)]
+    [HttpPost("{id:guid}/external-access")]
+    [ProducesResponseType<InstanceConnectionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> EnableExternalAccess(Guid id, CancellationToken cancellationToken) =>
+        ExternalAccessChanged(await connectivity.EnableAsync(id, cancellationToken));
+
+    /// <summary>Stops publishing the instance's database port.</summary>
+    /// <remarks>
+    /// The host port is given up and may be allocated to another instance afterwards. <b>The
+    /// instance's database server is restarted</b>, on the same data. The same conditions apply as
+    /// for enabling; an instance without external access is answered with
+    /// <c>409 EXTERNAL_ACCESS_ALREADY_DISABLED</c>.
+    /// </remarks>
+    [Authorize(Policy = AuroraPolicies.Admin)]
+    [HttpDelete("{id:guid}/external-access")]
+    [ProducesResponseType<InstanceConnectionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> DisableExternalAccess(Guid id, CancellationToken cancellationToken) =>
+        ExternalAccessChanged(await connectivity.DisableAsync(id, cancellationToken));
+
+    private IActionResult ExternalAccessChanged(ExternalAccessResult result)
+    {
+        if (result.Status == ExternalAccessStatus.Changed)
+        {
+            return Ok(result.Connection);
+        }
+
+        if (result.Status == ExternalAccessStatus.NotFound)
+        {
+            return InstanceNotFound();
+        }
+
+        var (status, code, message) = ExternalAccessErrors.For(result);
+        return StatusCode(status, ApiErrorResponse.Create(code, message));
     }
 
     /// <summary>Deletes an instance, its database server and all of its data.</summary>

@@ -1,0 +1,76 @@
+@page "/instances/{id:guid}/external-access"
+@model AuroraDbManager.Web.Pages.Instances.ExternalAccessModel
+@using AuroraDbManager.Api.Application.Connectivity
+@using AuroraDbManager.Api.Domain.Instances
+@inject Microsoft.Extensions.Options.IOptions<ExternalAccessOptions> ExternalAccess
+@{
+    var instance = Model.Instance;
+    var enabled = Model.Connection.External.Enabled;
+    var settings = ExternalAccess.Value;
+    ViewData["Title"] = $"External access · {instance.Name}";
+    var header = new PageHeader(enabled ? "Disable external access?" : "Enable external access?", $"{instance.Name} · {Labels.For(instance.Engine)} {instance.Version}")
+    {
+        Breadcrumbs = [new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)), new Crumb("External access")],
+        Status = StatusBadge.For(instance.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Problem is not null)
+{
+    <partial name="_Alert" model="@Model.Problem" />
+}
+else if (instance.Status != InstanceStatus.Running)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Warning, "External access can only be changed while the instance is running.", $"The instance is {StatusBadge.For(instance.Status).Label.ToLowerInvariant()}"))" />
+}
+
+<div class="card card-danger form-card">
+    <div class="card-body stack">
+        @if (!enabled)
+        {
+            <p>This exposes the database port of <strong>@instance.Name</strong> outside the Docker network, on a port of this server that Aurora picks.</p>
+            <ul class="consequences">
+                <li>
+                    The port is bound to <strong class="mono">@settings.NormalizedBindAddress</strong>:
+                    @if (settings.BindsEveryInterface)
+                    {
+                        <text>every network interface of this server. Other machines can reach it unless a firewall stops them.</text>
+                    }
+                    else if (System.Net.IPAddress.IsLoopback(System.Net.IPAddress.Parse(settings.NormalizedBindAddress)))
+                    {
+                        <text>this server only. Other machines cannot connect.</text>
+                    }
+                    else
+                    {
+                        <text>one network interface of this server. Machines that can reach that address can connect unless a firewall stops them.</text>
+                    }
+                </li>
+                <li>Aurora publishes the port in Docker and nothing more. It does not open or close this server's firewall, a cloud security group, or anything else in front of it.</li>
+                <li>Every database in this instance becomes reachable on that port by anyone who can reach it and has a password.</li>
+                <li><strong>The database server is restarted.</strong> Its data is kept, and it is unavailable to its clients until it is up again, usually a few seconds.</li>
+            </ul>
+            <form method="post" asp-page-handler="Enable" class="form">
+                <div class="form-actions">
+                    <a class="button" href="@Url.Content("~" + Routes.Instance(instance.Id))">Cancel</a>
+                    <button type="submit" class="button button-danger-solid" data-busy-label="Restarting the database server…">Enable external access</button>
+                </div>
+            </form>
+        }
+        else
+        {
+            <p>This stops publishing the database port of <strong>@instance.Name</strong>. It is currently on host port <strong class="mono">@Model.Connection.External.Port</strong>.</p>
+            <ul class="consequences">
+                <li>Clients that connect through that port lose their connection and can no longer connect. Clients inside the Docker network are not affected by the change itself.</li>
+                <li>The host port is given up. If external access is enabled again later, the instance may get a different port.</li>
+                <li><strong>The database server is restarted.</strong> Its data is kept, and it is unavailable to all its clients until it is up again, usually a few seconds.</li>
+            </ul>
+            <form method="post" asp-page-handler="Disable" class="form">
+                <div class="form-actions">
+                    <a class="button" href="@Url.Content("~" + Routes.Instance(instance.Id))">Cancel</a>
+                    <button type="submit" class="button button-danger-solid" data-busy-label="Restarting the database server…">Disable external access</button>
+                </div>
+            </form>
+        }
+    </div>
+</div>

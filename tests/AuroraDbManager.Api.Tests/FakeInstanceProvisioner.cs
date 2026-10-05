@@ -116,6 +116,35 @@ public sealed class FakeInstanceProvisioner : IInstanceProvisioner
         return EnsureRunningFailure is null ? Task.CompletedTask : Task.FromException(EnsureRunningFailure);
     }
 
+    /// <summary>What each call of <see cref="ApplyExternalAccessAsync"/> was asked to publish: the instance, and its host port or null.</summary>
+    public List<(Guid InstanceId, int? HostPort)> AppliedExternalAccess { get; } = [];
+
+    /// <summary>When set, <see cref="ApplyExternalAccessAsync"/> throws it.</summary>
+    public Exception? ApplyExternalAccessFailure { get; set; }
+
+    /// <summary>Host ports that are taken: publishing on one fails as Docker makes it fail.</summary>
+    public HashSet<int> HostPortsInUse { get; } = [];
+
+    public Task ApplyExternalAccessAsync(Instance instance, CancellationToken cancellationToken)
+    {
+        if (ApplyExternalAccessFailure is not null)
+        {
+            throw ApplyExternalAccessFailure;
+        }
+
+        if (instance.ExternalPort is { } port && HostPortsInUse.Contains(port))
+        {
+            throw new InstanceProvisioningException("PORT_ALREADY_IN_USE", "The host port is already in use.");
+        }
+
+        lock (_lock)
+        {
+            AppliedExternalAccess.Add((instance.Id, instance.ExternalPort));
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<IReadOnlyList<ProvisionedResource>> ListResourcesAsync(CancellationToken cancellationToken) =>
         ListResourcesFailure is null
             ? Task.FromResult<IReadOnlyList<ProvisionedResource>>(Resources.ToList())

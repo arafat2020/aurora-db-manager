@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Infrastructure.Docker;
@@ -67,6 +68,7 @@ public sealed class DockerProvisioningIntegrationTests : IAsyncLifetime
             ReadinessTimeoutSeconds = readinessTimeoutSeconds ?? _options.ReadinessTimeoutSeconds,
             ReadinessPollIntervalMilliseconds = _options.ReadinessPollIntervalMilliseconds
         }),
+        Options.Create(new ExternalAccessOptions()),
         TimeProvider.System,
         NullLogger<DockerInstanceProvisioner>.Instance);
 

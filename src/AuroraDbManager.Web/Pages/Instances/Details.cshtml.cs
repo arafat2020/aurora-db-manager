@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
@@ -10,13 +11,14 @@ namespace AuroraDbManager.Web.Pages.Instances;
 
 /// <summary>
 /// One instance: what is on record about it, how its database server is doing right now, its
-/// databases, and the last few things done to it. Everything is read through the services the
+/// databases, how it is reached, and the last few things done to it. Everything is read through the services the
 /// API reads it through; the health is <see cref="InstanceHealthService"/>'s and nobody else's.
 /// </summary>
 public sealed class DetailsModel(
     InstanceService instances,
     InstanceHealthService health,
     DatabaseService databases,
+    InstanceConnectivityService connectivity,
     JobService jobs) : ResourcePageModel
 {
     /// <summary>How many of the instance's databases and operations this page shows; the rest are a link away.</summary>
@@ -29,6 +31,9 @@ public sealed class DetailsModel(
     /// provisioned: there is no server to look at yet, and its absence is not ill health.
     /// </summary>
     public InstanceHealthResponse? Health { get; private set; }
+
+    /// <summary>How the instance is reached, as <see cref="InstanceConnectivityService"/> has it.</summary>
+    public InstanceConnectionResponse Connection { get; private set; } = null!;
 
     public DatabaseListResponse Databases { get; private set; } = null!;
 
@@ -43,12 +48,14 @@ public sealed class DetailsModel(
     {
         var instance = await instances.GetAsync(id, cancellationToken);
         var list = instance is null ? null : await databases.ListAsync(id, new ListDatabasesQuery { PageSize = Shown }, cancellationToken);
-        if (instance is null || list is null)
+        var connection = list is null ? null : await connectivity.GetAsync(id, cancellationToken);
+        if (instance is null || list is null || connection is null)
         {
             return Missing("Instance");
         }
 
         Instance = instance;
+        Connection = connection;
         Databases = list;
         Health = instance.Status == InstanceStatus.Provisioning ? null : await health.GetAsync(id, cancellationToken);
         Jobs = await jobs.ListAsync(new ListJobsQuery { InstanceId = id, PageSize = Shown }, cancellationToken);

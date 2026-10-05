@@ -89,3 +89,10 @@ public sealed record Alert(StatusTone Tone, string Message, string? Title = null
 public sealed record DatabaseTable(
     AuroraDbManager.Api.Application.Instances.InstanceResponse Instance,
     IReadOnlyList<AuroraDbManager.Api.Application.Databases.DatabaseResponse> Databases);
+
+/// <summary>Where a database server is reached, as the Connection sections show it.</summary>
+/// <param name="Connection">How the instance is reached.</param>
+/// <param name="Database">The database the section is about; null on an instance's page.</param>
+public sealed record ConnectionView(
+    AuroraDbManager.Api.Application.Connectivity.InstanceConnectionResponse Connection,
+    string? Database = null);

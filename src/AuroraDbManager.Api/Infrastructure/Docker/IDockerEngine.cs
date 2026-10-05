@@ -36,7 +36,23 @@ public interface IDockerEngine
     /// <summary>Lists all volumes that carry the label.</summary>
     Task<IReadOnlyList<DockerLabelledResource>> ListVolumesAsync(string label, string value, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Starts the container. Fails with <see cref="DockerFailure.PortUnavailable"/> if a host port
+    /// it publishes on is taken.
+    /// </summary>
     Task StartContainerAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stops the container, giving its process time to shut down in order before it is killed.
+    /// Does nothing if it is not running. The container and everything it mounts are kept.
+    /// </summary>
+    Task StopContainerAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>Gives the container another name. Nothing else about it changes.</summary>
+    Task RenameContainerAsync(string name, string newName, CancellationToken cancellationToken);
+
+    /// <summary>Every host port a running container is published on, whatever the container is.</summary>
+    Task<IReadOnlySet<int>> ListPublishedHostPortsAsync(CancellationToken cancellationToken);
 
     /// <summary>Stops and removes the container; named volumes are kept. Does nothing if it does not exist.</summary>
     Task RemoveContainerAsync(string name, CancellationToken cancellationToken);
@@ -50,13 +66,21 @@ public sealed record DockerVolume(string Name, IReadOnlyDictionary<string, strin
 public sealed record DockerLabelledResource(string Name, IReadOnlyDictionary<string, string> Labels);
 
 // NetworkAddresses: the container's IP address on each network it is attached to, by network name.
+// PortBindings: the host ports the container is configured to publish, running or not; null is none.
 public sealed record DockerContainer(
     string Name,
     string Image,
     DockerContainerState State,
     IReadOnlyDictionary<string, string> Labels,
     IReadOnlyList<DockerMount> Mounts,
-    IReadOnlyDictionary<string, string>? NetworkAddresses = null);
+    IReadOnlyDictionary<string, string>? NetworkAddresses = null,
+    IReadOnlyList<DockerPortBinding>? PortBindings = null);
+
+/// <summary>One container port published on the host.</summary>
+/// <param name="ContainerPort">The TCP port inside the container.</param>
+/// <param name="HostAddress">The address of the host it is bound to.</param>
+/// <param name="HostPort">The port of the host it is bound to.</param>
+public sealed record DockerPortBinding(int ContainerPort, string HostAddress, int HostPort);
 
 /// <param name="VolumeName">Name of the mounted volume.</param>
 /// <param name="Target">Path inside the container.</param>
@@ -81,6 +105,9 @@ public enum DockerFailure
     Unavailable,
     NotFound,
     Conflict,
+
+    /// <summary>A host port the container publishes on is already taken.</summary>
+    PortUnavailable,
 
     /// <summary>The Docker Engine rejected or failed the operation.</summary>
     Failed

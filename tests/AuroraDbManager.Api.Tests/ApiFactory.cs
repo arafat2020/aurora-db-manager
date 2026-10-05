@@ -220,6 +220,12 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
     /// </summary>
     public string? BackupRootPath { get; init; }
 
+    /// <summary>Changes the external-access settings: the bind address, the advertised host, the port range.</summary>
+    public Action<Application.Connectivity.ExternalAccessOptions>? ConfigureExternalAccess { get; init; }
+
+    /// <summary>Changes the Docker settings after the test defaults were applied, the readiness timeout for instance.</summary>
+    public Action<DockerOptions>? ConfigureDocker { get; init; }
+
     /// <summary>Changes the backup settings after the test defaults were applied.</summary>
     public Action<BackupOptions>? ConfigureBackups { get; init; }
 
@@ -397,6 +403,16 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
                     services.RemoveAll<IInstanceProvisioner>();
                     services.AddSingleton<IInstanceProvisioner>(Provisioner);
                 }
+            }
+
+            if (ConfigureDocker is not null)
+            {
+                services.Configure(ConfigureDocker);
+            }
+
+            if (ConfigureExternalAccess is not null)
+            {
+                services.Configure(ConfigureExternalAccess);
             }
 
             services.AddSingleton<ILoggerProvider>(Logs);

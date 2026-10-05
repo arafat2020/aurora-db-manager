@@ -75,6 +75,26 @@ Everything in `.env` is described in `.env.example`. The ones most often changed
 | `AURORA_HTTPS` | `false` | Set to `true` behind a TLS-terminating reverse proxy. |
 | `AURORA_BACKUP_STORAGE` | `local` | `s3` to store new backups in the configured bucket. |
 
+## Reaching the databases
+
+The instances Aurora creates are on the `aurora-instances` network and publish no port. Another
+container reaches one by joining that network and connecting to the host name shown in the
+instance's *Connection* section.
+
+To connect from outside Docker, an administrator enables **external access** for the instance in
+the UI. Aurora then publishes its database port on this machine:
+
+| Variable | Default | |
+| --- | --- | --- |
+| `AURORA_DB_BIND` | `127.0.0.1` | The address of this machine the ports are bound to. `127.0.0.1` is this machine only. |
+| `AURORA_DB_HOST` | empty | The host shown to users. Needed when `AURORA_DB_BIND` is `0.0.0.0`. |
+| `AURORA_DB_PORT_START` | `15432` | First port of the range Aurora picks from. |
+| `AURORA_DB_PORT_END` | `16432` | Last one. |
+
+The ports are published by Docker on the host, not by the `aurora` service, so nothing in
+`docker-compose.yml` lists them. Aurora does not configure a firewall. Read
+[security.md](security.md#external-database-access) before binding to anything but `127.0.0.1`.
+
 ## S3 storage
 
 The S3 settings default to the `localstack` service, so this alone stores new backups in S3:

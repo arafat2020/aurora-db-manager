@@ -15,7 +15,8 @@ public sealed record DockerContainerSpec(
     string VolumeTarget,
     string NetworkName,
     long NanoCpus,
-    long MemoryBytes)
+    long MemoryBytes,
+    DockerPortBinding? PortBinding = null)
 {
     private const long NanoCpusPerCpu = 1_000_000_000;
     private const long BytesPerMegabyte = 1024 * 1024;
@@ -28,8 +29,11 @@ public sealed record DockerContainerSpec(
     /// <item><c>MemoryMb</c> is a hard memory limit of <c>MemoryMb × 1024 × 1024</c> bytes.</item>
     /// <item><c>StorageGb</c> is not enforced: Docker's local volume driver cannot limit a volume's size.</item>
     /// </list>
+    /// The container publishes what <see cref="PortBindingFor"/> says, which for an instance
+    /// without external access is nothing.
     /// </summary>
-    public static DockerContainerSpec For(Instance instance, DatabaseImage image, string adminPassword, string networkName) => new(
+    public static DockerContainerSpec For(
+        Instance instance, DatabaseImage image, string adminPassword, string networkName, string bindAddress) => new(
         Name: DockerResourceNaming.ContainerName(instance.Id),
         Image: image.Image,
         Environment: new Dictionary<string, string> { [image.AdminPasswordVariable] = adminPassword },
@@ -38,7 +42,18 @@ public sealed record DockerContainerSpec(
         VolumeTarget: image.DataPath,
         NetworkName: networkName,
         NanoCpus: instance.Cpu * NanoCpusPerCpu,
-        MemoryBytes: instance.MemoryMb * BytesPerMegabyte);
+        MemoryBytes: instance.MemoryMb * BytesPerMegabyte,
+        PortBinding: PortBindingFor(instance, image.Port, bindAddress));
+
+    /// <summary>
+    /// The one port an instance's container publishes, or null if its record says none: the
+    /// engine's own port, as the image catalog and <see cref="EngineDefaults"/> have it, on the host port on the instance's record, bound
+    /// to the server's configured address. No part of it is anything a request said.
+    /// </summary>
+    public static DockerPortBinding? PortBindingFor(Instance instance, int enginePort, string bindAddress) =>
+        instance is { ExternalAccessEnabled: true, ExternalPort: { } hostPort }
+            ? new DockerPortBinding(enginePort, bindAddress, hostPort)
+            : null;
 
     // Keeps the environment, and with it the password, out of anything that prints a spec.
     public override string ToString() => $"{nameof(DockerContainerSpec)} {{ Name = {Name}, Image = {Image} }}";

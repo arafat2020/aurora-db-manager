@@ -1,5 +1,6 @@
 @page "/instances/{id:guid}/databases/{databaseId:guid}"
 @model AuroraDbManager.Web.Pages.Instances.Databases.DetailsModel
+@using AuroraDbManager.Api.Application.Connectivity
 @using AuroraDbManager.Api.Domain.Databases
 @{
     var instance = Model.Instance;
@@ -66,6 +67,32 @@
                 <dt>ID</dt>
                 <dd class="mono">@database.Id</dd>
             </dl>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="connection-title">
+    <div class="section-header">
+        <h2 id="connection-title">Connection</h2>
+        <span class="section-note">External access is the instance's: <a href="@Url.Content("~" + Routes.Instance(instance.Id))">@instance.Name</a></span>
+    </div>
+    <div class="card">
+        <div class="card-body stack">
+            <partial name="_ConnectionEndpoints" model="@(new ConnectionView(new InstanceConnectionResponse(instance.Id, instance.Engine, Model.Connection.Username, Model.Connection.Internal, Model.Connection.External), database.Name))" />
+            @if (Model.Connection.ConnectionStrings.External is { } external)
+            {
+                <div class="copy">
+                    <div class="field-label" id="external-template-label">Connection string, from outside the Docker network</div>
+                    <pre class="snippet" id="external-template" aria-labelledby="external-template-label">@external</pre>
+                    <button type="button" class="button" data-copy="#external-template" hidden>Copy connection template</button>
+                </div>
+            }
+            <div class="copy">
+                <div class="field-label" id="internal-template-label">Connection string, from inside the Docker network</div>
+                <pre class="snippet" id="internal-template" aria-labelledby="internal-template-label">@Model.Connection.ConnectionStrings.Internal</pre>
+                <button type="button" class="button" data-copy="#internal-template" hidden>Copy connection template</button>
+            </div>
+            <p class="field-hint">Replace <code>@ConnectionStrings.PasswordPlaceholder</code> with the password of <code>@Model.Connection.Username</code>. Aurora keeps that password in its secret store and does not show it.</p>
         </div>
     </div>
 </section>

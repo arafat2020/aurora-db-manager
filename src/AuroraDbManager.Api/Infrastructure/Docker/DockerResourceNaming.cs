@@ -14,6 +14,12 @@ public static class DockerResourceNaming
 
     public static string VolumeName(Guid instanceId) => $"{ContainerName(instanceId)}-data";
 
+    /// <summary>
+    /// The name an instance's container is set aside under while a container with another port
+    /// configuration takes its place. It exists only for the duration of that replacement.
+    /// </summary>
+    public static string ReplacedContainerName(Guid instanceId) => $"{ContainerName(instanceId)}-replaced";
+
     /// <summary>Labels put on an instance's container and volume to mark them as its own.</summary>
     public static IReadOnlyDictionary<string, string> InstanceLabels(Guid instanceId) => new Dictionary<string, string>
     {

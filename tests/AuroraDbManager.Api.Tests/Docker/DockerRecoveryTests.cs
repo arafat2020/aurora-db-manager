@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Connectivity;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Instances;
 using AuroraDbManager.Api.Infrastructure.Docker;
@@ -16,11 +17,13 @@ public sealed class DockerRecoveryTests
     private readonly DockerInstanceProvisioner _provisioner;
     private readonly Instance _instance = Instance.Create("orders", InstanceEngine.Postgres, "16", 2, 1024, 20, DateTime.UtcNow);
 
+    private readonly ExternalAccessOptions _externalAccess = new();
+
     public DockerRecoveryTests()
     {
         var options = Options.Create(new DockerOptions { ReadinessTimeoutSeconds = 10, ReadinessPollIntervalMilliseconds = 0 });
         _provisioner = new DockerInstanceProvisioner(
-            _docker, new DockerImageResolver(), new InMemoryInstanceSecretStore(), options, new SteppingTimeProvider(), _logger);
+            _docker, new DockerImageResolver(), new InMemoryInstanceSecretStore(), options, Options.Create(_externalAccess), new SteppingTimeProvider(), _logger);
     }
 
     private string ContainerName => DockerResourceNaming.ContainerName(_instance.Id);

@@ -1,0 +1,86 @@
+@model ConnectionView
+@using AuroraDbManager.Api.Application.Connectivity
+@inject Microsoft.Extensions.Options.IOptions<ExternalAccessOptions> ExternalAccess
+@{
+    var external = Model.Connection.External;
+    var inner = Model.Connection.Internal;
+}
+@* Where the server is reached: from outside the Docker network, if that is enabled, and from inside it. Never a password. *@
+<div class="stack">
+    <div class="subheading">From outside the Docker network</div>
+    <dl class="definition-list">
+        <dt>External access</dt>
+        <dd>
+            <partial name="_StatusBadge" model="@StatusBadge.ForExternalAccess(external.Enabled)" />
+            <span class="muted">
+                @if (external.Enabled)
+                {
+                    <text>The database port is published on this server. Whether it can be reached from other machines depends on the address it is bound to and on this server's firewall and network.</text>
+                }
+                else
+                {
+                    <text>The database port is not published. The server is reachable from the Docker network only.</text>
+                }
+            </span>
+        </dd>
+        @if (external.Enabled)
+        {
+            <dt>Host</dt>
+            <dd>
+                @if (external.Host is not null)
+                {
+                    <span class="mono">@external.Host</span>
+                }
+                else
+                {
+                    <span class="muted">This server's address. Set <code>ExternalAccess:AdvertisedHost</code> to have it shown here.</span>
+                }
+            </dd>
+            <dt>Port</dt>
+            <dd class="mono">@external.Port</dd>
+            <dt>Bound to</dt>
+            <dd>
+                <span class="mono">@external.BindAddress</span>
+                <span class="muted">
+                    @if (ExternalAccess.Value.BindsEveryInterface)
+                    {
+                        <text>Every network interface of this server.</text>
+                    }
+                    else if (System.Net.IPAddress.IsLoopback(System.Net.IPAddress.Parse(external.BindAddress)))
+                    {
+                        <text>This server only: other machines cannot connect.</text>
+                    }
+                    else
+                    {
+                        <text>One network interface of this server.</text>
+                    }
+                </span>
+            </dd>
+            <dt>Protocol</dt>
+            <dd>@Labels.For(Model.Connection.Engine)</dd>
+            @if (Model.Database is not null)
+            {
+                <dt>Database</dt>
+                <dd class="mono">@Model.Database</dd>
+            }
+            <dt>Username</dt>
+            <dd class="mono">@Model.Connection.Username</dd>
+        }
+    </dl>
+    <div class="subheading">From inside the Docker network</div>
+    <dl class="definition-list">
+        <dt>Network</dt>
+        <dd class="mono">@inner.Network</dd>
+        <dt>Host</dt>
+        <dd class="mono">@inner.Host</dd>
+        <dt>Port</dt>
+        <dd class="mono">@inner.Port</dd>
+        @if (Model.Database is not null)
+        {
+            <dt>Database</dt>
+            <dd class="mono">@Model.Database</dd>
+        }
+        <dt>Username</dt>
+        <dd class="mono">@Model.Connection.Username</dd>
+    </dl>
+</div>

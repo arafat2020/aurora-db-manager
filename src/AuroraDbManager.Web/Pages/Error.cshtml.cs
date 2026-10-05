@@ -16,6 +16,12 @@ namespace AuroraDbManager.Web.Pages;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class ErrorModel : PageModel
 {
+    /// <summary>
+    /// Where a page that looked for something and did not find it says what that was ("Instance"),
+    /// in <see cref="HttpContext.Items"/>, so that this page can say so too.
+    /// </summary>
+    public const string MissingResourceKey = "Aurora.MissingResource";
+
     public int Status { get; private set; }
 
     public string Title { get; private set; } = string.Empty;
@@ -84,6 +90,11 @@ public sealed class ErrorModel : PageModel
                 "The server could not accept the request as it was sent.",
                 "warning")
         };
+
+        if (Status == StatusCodes.Status404NotFound && HttpContext.Items[MissingResourceKey] is string missing)
+        {
+            (Title, Message) = ($"{missing} not found", "It may have been deleted, or the link may be wrong.");
+        }
 
         if (Status == StatusCodes.Status429TooManyRequests
             && int.TryParse(Response.Headers.RetryAfter.ToString(), out var seconds)

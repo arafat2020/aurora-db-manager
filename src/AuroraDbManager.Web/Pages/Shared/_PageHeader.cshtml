@@ -1,7 +1,33 @@
 @model PageHeader
+@if (Model.Breadcrumbs.Count > 0)
+{
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <ol>
+            @foreach (var crumb in Model.Breadcrumbs)
+            {
+                <li>
+                    @if (crumb.Path is not null)
+                    {
+                        <a href="@Url.Content("~" + crumb.Path)">@crumb.Label</a>
+                    }
+                    else
+                    {
+                        <span aria-current="location">@crumb.Label</span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+}
 <header class="page-header">
     <div>
-        <h1>@Model.Title</h1>
+        <div class="page-title">
+            <h1>@Model.Title</h1>
+            @if (Model.Status is not null)
+            {
+                <partial name="_StatusBadge" model="@Model.Status" />
+            }
+        </div>
         @if (Model.Description is not null)
         {
             <p class="page-description">@Model.Description</p>
@@ -9,8 +35,11 @@
     </div>
     @if (Model.Action is not null)
     {
-        <a class="button button-primary" href="@Url.Content("~" + Model.Action.Path)">
-            <partial name="_Icon" model="@("plus")" />
+        <a class="@Model.Action.CssClass" href="@Url.Content("~" + Model.Action.Path)">
+            @if (Model.Action.Tone == ActionTone.Primary)
+            {
+                <partial name="_Icon" model="@("plus")" />
+            }
             @Model.Action.Label
         </a>
     }

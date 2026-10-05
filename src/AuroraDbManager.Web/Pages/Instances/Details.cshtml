@@ -1,0 +1,152 @@
+@page "/instances/{id:guid}"
+@model AuroraDbManager.Web.Pages.Instances.DetailsModel
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    var instance = Model.Instance;
+    ViewData["Title"] = instance.Name;
+    var header = new PageHeader(
+        instance.Name,
+        $"{Labels.For(instance.Engine)} {instance.Version}",
+        Offered.DeleteInstance(User, instance) ? new PageAction("Delete instance", Routes.DeleteInstance(instance.Id), ActionTone.Danger) : null)
+    {
+        Breadcrumbs = [new Crumb("Instances", Routes.Instances), new Crumb(instance.Name)],
+        Status = StatusBadge.For(instance.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.InProgress)
+{
+    <partial name="_InProgress" model="@Routes.Instance(instance.Id)" />
+}
+
+@if (instance.Error is not null)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Danger, instance.Error.Message, instance.Error.Code))" />
+}
+
+<section class="section" aria-labelledby="overview-title">
+    <div class="section-header">
+        <h2 id="overview-title">Overview</h2>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Status</dt>
+                <dd>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(instance.Status)" />
+                    @if (instance.Status == InstanceStatus.Provisioning)
+                    {
+                        <span class="muted">The database server is being set up. Databases can be created once it is running.</span>
+                    }
+                </dd>
+                <dt>Engine</dt>
+                <dd>@Labels.For(instance.Engine)</dd>
+                <dt>Version</dt>
+                <dd>@instance.Version</dd>
+                <dt>CPU</dt>
+                <dd>@Labels.Cpu(instance.Cpu)</dd>
+                <dt>Memory</dt>
+                <dd>@Labels.Memory(instance.MemoryMb)</dd>
+                <dt>Storage</dt>
+                <dd>@Labels.Storage(instance.StorageGb)</dd>
+                <dt>Created</dt>
+                <dd><partial name="_Time" model="@((DateTime?)instance.CreatedAt)" /></dd>
+                <dt>Last changed</dt>
+                <dd><partial name="_Time" model="@((DateTime?)instance.UpdatedAt)" /></dd>
+                <dt>ID</dt>
+                <dd class="mono">@instance.Id</dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="health-title">
+    <div class="section-header">
+        <h2 id="health-title">Health</h2>
+        <span class="section-note">
+            @if (Model.Health is not null)
+            {
+                <text>Checked <partial name="_Time" model="@((DateTime?)Model.Health.CheckedAt)" /> · </text>
+            }
+            <a href="@Url.Content("~" + Routes.Instance(instance.Id))">Check again</a>
+        </span>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            @if (Model.Health is { } health)
+            {
+                <dl class="definition-list">
+                    <dt>Health</dt>
+                    <dd>
+                        <partial name="_StatusBadge" model="@StatusBadge.For(health.Status)" />
+                        <span class="muted">@Labels.For(health)</span>
+                    </dd>
+                    <dt>Server</dt>
+                    <dd>@(health.Container.Exists == false ? "Not found" : Labels.For(health.Container.Running, "Running", "Stopped"))</dd>
+                    <dt>Connections</dt>
+                    <dd>@Labels.For(health.Database.Reachable, "Accepted", "Not accepted")</dd>
+                </dl>
+            }
+            else
+            {
+                <dl class="definition-list">
+                    <dt>Health</dt>
+                    <dd>
+                        <partial name="_StatusBadge" model="@(new StatusBadge("Not checked", StatusTone.Neutral))" />
+                        <span class="muted">There is no database server to check until the instance has been provisioned.</span>
+                    </dd>
+                </dl>
+            }
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="databases-title">
+    <div class="section-header">
+        <h2 id="databases-title">Databases</h2>
+        <span class="section-actions">
+            @if (Model.Databases.TotalCount > 0)
+            {
+                <a class="button" href="@Url.Content("~" + Routes.Databases(instance.Id))">All databases (@Model.Databases.TotalCount)</a>
+            }
+            @if (Offered.CreateDatabase(User, instance))
+            {
+                <a class="button button-primary" href="@Url.Content("~" + Routes.CreateDatabase(instance.Id))"><partial name="_Icon" model="@("plus")" />Create database</a>
+            }
+        </span>
+    </div>
+    @if (Model.Databases.TotalCount == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No databases yet", instance.Status switch
+        {
+            InstanceStatus.Running when User.IsOperator() => "Create the first database in this instance.",
+            InstanceStatus.Running => "An operator or an administrator creates them.",
+            InstanceStatus.Provisioning => "Databases can be created once the instance is running.",
+            _ => "Databases can only be created in a running instance."
+        }, "databases", Offered.CreateDatabase(User, instance) ? new PageAction("Create database", Routes.CreateDatabase(instance.Id)) : null))" />
+    }
+    else
+    {
+        <partial name="_DatabaseTable" model="@(new DatabaseTable(instance, Model.Databases.Items))" />
+        @if (Model.Databases.TotalCount > Model.Databases.Items.Count)
+        {
+            <p class="table-note">Showing the @Model.Databases.Items.Count newest of @Model.Databases.TotalCount.</p>
+        }
+    }
+</section>
+
+<section class="section" aria-labelledby="operations-title">
+    <div class="section-header">
+        <h2 id="operations-title">Recent operations</h2>
+        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+    </div>
+    @if (Model.Jobs.Items.Count == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No operations", "Nothing has been done to this instance in the background.", "jobs"))" />
+    }
+    else
+    {
+        <partial name="_RecentJobs" model="@Model.Jobs" />
+    }
+</section>

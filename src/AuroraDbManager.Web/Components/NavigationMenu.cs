@@ -23,7 +23,6 @@ public static class NavigationMenu
 {
     public static readonly NavigationItem Overview = new("Overview", "/", "overview");
     public static readonly NavigationItem Instances = new("Instances", "/instances", "instances");
-    public static readonly NavigationItem Databases = new("Databases", "/databases", "databases");
     public static readonly NavigationItem Backups = new("Backups", "/backups", "backups");
     public static readonly NavigationItem Schedules = new("Schedules", "/schedules", "schedules");
     public static readonly NavigationItem Jobs = new("Jobs", "/jobs", "jobs");
@@ -31,7 +30,8 @@ public static class NavigationMenu
     public static readonly NavigationItem Users = new("Users", "/users", "users");
 
     /// <summary>
-    /// The menu for a user. Every signed-in user may read everything operational; only an
+    /// The menu for a user. Databases have no entry of their own: a database is in an instance,
+    /// and is found there. Every signed-in user may read everything operational; only an
     /// administrator is shown the administration group, because only an administrator's request
     /// for it would be answered.
     /// </summary>
@@ -39,7 +39,7 @@ public static class NavigationMenu
     {
         var groups = new List<NavigationGroup>
         {
-            new(null, [Overview, Instances, Databases, Backups, Schedules, Jobs, Monitoring])
+            new(null, [Overview, Instances, Backups, Schedules, Jobs, Monitoring])
         };
 
         if (user.IsAdmin())

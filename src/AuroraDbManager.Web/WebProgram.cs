@@ -3,6 +3,7 @@ using AuroraDbManager.Api.Infrastructure.Security;
 using AuroraDbManager.Web.Authentication;
 using AuroraDbManager.Web.Components;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace AuroraDbManager.Web;
@@ -47,6 +48,19 @@ public sealed class WebProgram
                 antiforgery.Cookie.SecurePolicy = httpsOnly ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
                 antiforgery.Cookie.SameSite = SameSiteMode.Strict;
                 antiforgery.FormFieldName = "__RequestVerificationToken";
+            });
+
+        // The message a change leaves for the page it leads to (see Flash) travels in this cookie.
+        builder.Services.AddOptions<CookieTempDataProviderOptions>()
+            .Configure<IOptions<SecurityOptions>, IHostEnvironment>((tempData, security, environment) =>
+            {
+                var httpsOnly = security.Value.HttpsRedirection && !environment.IsDevelopment();
+                tempData.Cookie.Name = httpsOnly ? "__Host-aurora.flash" : "aurora.flash";
+                tempData.Cookie.HttpOnly = true;
+                tempData.Cookie.SecurePolicy = httpsOnly ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
+                tempData.Cookie.SameSite = SameSiteMode.Strict;
+                tempData.Cookie.IsEssential = true;
+                tempData.Cookie.Path = "/";
             });
 
         var app = builder.Build();

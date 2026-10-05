@@ -1,0 +1,7 @@
+@model string
+@* Shown while something on the page is on its way. With script the page reloads itself every few
+   seconds while it is being looked at, for a few minutes; without, there is the link. *@
+<p class="in-progress" role="status" data-refresh="5">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Work is in progress. <a href="@Url.Content("~" + Model)">Refresh</a> to see how far it is.</span>
+</p>

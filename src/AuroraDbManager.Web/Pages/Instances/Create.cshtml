@@ -1,0 +1,62 @@
+@page "/instances/create"
+@model AuroraDbManager.Web.Pages.Instances.CreateModel
+@using AuroraDbManager.Api.Application.Instances
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    ViewData["Title"] = "Create instance";
+}
+<partial name="_PageHeader" model="@(new PageHeader("Create instance", $"A new {Labels.Engines} server, in a container of its own.") { Breadcrumbs = [new Crumb("Instances", Routes.Instances), new Crumb("Create instance")] })" />
+
+<div class="card form-card">
+    <div class="card-body">
+        <form method="post" class="form">
+            <div asp-validation-summary="ModelOnly" class="field-error" role="alert"></div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.Name">Name <span class="field-required" aria-hidden="true">*</span></label>
+                <input class="input" asp-for="Input.Name" maxlength="@Instance.NameMaxLength" aria-describedby="name-hint" autocomplete="off" autofocus required />
+                <span class="field-hint" id="name-hint">What the instance is called in Aurora. Up to @Instance.NameMaxLength characters.</span>
+                <span class="field-error" asp-validation-for="Input.Name"></span>
+            </div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.EngineVersion">Engine and version <span class="field-required" aria-hidden="true">*</span></label>
+                <select class="select" asp-for="Input.EngineVersion" aria-describedby="engine-hint" required>
+                    <option value="">Choose an engine and version</option>
+                    @foreach (var (engine, versions) in Model.Engines)
+                    {
+                        <optgroup label="@Labels.For(engine)">
+                            @foreach (var version in versions)
+                            {
+                                <option value="@CreateModel.Choice(engine, version)">@Labels.For(engine) @version</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+                <span class="field-hint" id="engine-hint">Cannot be changed once the instance exists.</span>
+                <span class="field-error" asp-validation-for="Input.EngineVersion"></span>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label class="field-label" asp-for="Input.Cpu">CPU cores <span class="field-required" aria-hidden="true">*</span></label>
+                    <input class="input" asp-for="Input.Cpu" type="number" min="1" max="@CreateInstanceRequest.MaxCpu" step="1" inputmode="numeric" required />
+                    <span class="field-error" asp-validation-for="Input.Cpu"></span>
+                </div>
+                <div class="field">
+                    <label class="field-label" asp-for="Input.MemoryMb">Memory (MB) <span class="field-required" aria-hidden="true">*</span></label>
+                    <input class="input" asp-for="Input.MemoryMb" type="number" min="1" max="@CreateInstanceRequest.MaxMemoryMb" step="1" inputmode="numeric" aria-describedby="memory-hint" required />
+                    <span class="field-hint" id="memory-hint">1024 MB is 1 GB.</span>
+                    <span class="field-error" asp-validation-for="Input.MemoryMb"></span>
+                </div>
+                <div class="field">
+                    <label class="field-label" asp-for="Input.StorageGb">Storage (GB) <span class="field-required" aria-hidden="true">*</span></label>
+                    <input class="input" asp-for="Input.StorageGb" type="number" min="1" max="@CreateInstanceRequest.MaxStorageGb" step="1" inputmode="numeric" required />
+                    <span class="field-error" asp-validation-for="Input.StorageGb"></span>
+                </div>
+            </div>
+            <p class="field-hint">Creating an instance takes a while: its image may have to be downloaded, and the server has to start. The instance is listed as provisioning until it is ready.</p>
+            <div class="form-actions">
+                <button type="submit" class="button button-primary" data-busy-label="Creating…">Create instance</button>
+                <a class="button" href="~/instances">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

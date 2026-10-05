@@ -1,0 +1,44 @@
+@page "/instances/{id:guid}/databases/create"
+@model AuroraDbManager.Web.Pages.Instances.Databases.CreateModel
+@using AuroraDbManager.Api.Domain.Databases
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    var instance = Model.Instance;
+    ViewData["Title"] = "Create database";
+    var header = new PageHeader("Create database", $"A new, empty database in {instance.Name}, a {Labels.For(instance.Engine)} {instance.Version} instance.")
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb("Create database")
+        ]
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Problem is not null)
+{
+    <partial name="_Alert" model="@Model.Problem" />
+}
+else if (instance.Status != InstanceStatus.Running)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Warning, "A database can be created only while the instance is running.", $"The instance is {StatusBadge.For(instance.Status).Label.ToLowerInvariant()}"))" />
+}
+
+<div class="card form-card">
+    <div class="card-body">
+        <form method="post" class="form">
+            <div asp-validation-summary="ModelOnly" class="field-error" role="alert"></div>
+            <div class="field">
+                <label class="field-label" asp-for="Input.Name">Name <span class="field-required" aria-hidden="true">*</span></label>
+                <input class="input mono" asp-for="Input.Name" maxlength="@DatabaseName.MaxLength" aria-describedby="name-hint" autocomplete="off" autocapitalize="none" spellcheck="false" autofocus required />
+                <span class="field-hint" id="name-hint">Lowercase letters, digits and underscores, starting with a letter. Up to @DatabaseName.MaxLength characters, and unique within the instance.</span>
+                <span class="field-error" asp-validation-for="Input.Name"></span>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="button button-primary" data-busy-label="Creating…">Create database</button>
+                <a class="button" href="@Url.Content("~" + Routes.Databases(instance.Id))">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

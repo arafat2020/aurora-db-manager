@@ -1,18 +1,28 @@
 @page "/instances"
 @model AuroraDbManager.Web.Pages.Instances.IndexModel
+@using AuroraDbManager.Api.Domain.Instances
 @{
     ViewData["Title"] = "Instances";
+    var create = Offered.CreateInstance(User) ? new PageAction("Create instance", Routes.CreateInstance) : null;
 }
-<partial name="_PageHeader" model="@(new PageHeader("Instances", "The PostgreSQL and MySQL servers this installation runs."))" />
+<partial name="_PageHeader" model="@(new PageHeader("Instances", "Manage your database instances.", create))" />
 
-@if (Model.Instances.Items.Count == 0)
+@if (Model.Instances.TotalCount == 0)
 {
-    <partial name="_EmptyState" model="@(new EmptyState("No instances yet", User.IsAdmin()
-        ? "An instance is a database server in a container of its own. Creating one from here arrives with instance management; until then, use POST /api/v1/instances."
-        : "An instance is a database server in a container of its own. An administrator creates them.", "instances"))" />
+    <partial name="_EmptyState" model="@(new EmptyState("No database instances yet", create is not null
+        ? $"Create your first {Labels.Engines} instance."
+        : $"An instance is a {Labels.Engines} server in a container of its own. An administrator creates them.", "instances", create))" />
+}
+else if (Model.Instances.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("Nothing on this page", $"There are {Model.Instances.TotalCount} instances, and this page is past the last of them.", "search", new PageAction("Back to the first page", Routes.Instances, ActionTone.Plain)))" />
 }
 else
 {
+    @if (Model.Instances.Items.Any(instance => instance.Status == InstanceStatus.Provisioning))
+    {
+        <partial name="_InProgress" model="@Routes.Instances" />
+    }
     <div class="table-wrap">
         <table class="table">
             <caption>Instances, newest first</caption>
@@ -23,13 +33,14 @@ else
                     <th scope="col">Status</th>
                     <th scope="col">Resources</th>
                     <th scope="col">Created</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var instance in Model.Instances.Items)
                 {
                     <tr>
-                        <td class="cell-primary">@instance.Name</td>
+                        <td class="cell-primary"><a href="@Url.Content("~" + Routes.Instance(instance.Id))">@instance.Name</a></td>
                         <td>@Labels.For(instance.Engine) @instance.Version</td>
                         <td>
                             <partial name="_StatusBadge" model="@StatusBadge.For(instance.Status)" />
@@ -38,12 +49,19 @@ else
                                 <code>@instance.Error.Code</code>
                             }
                         </td>
-                        <td>@instance.Cpu CPU · @instance.MemoryMb MB · @instance.StorageGb GB</td>
+                        <td>@Labels.Cpu(instance.Cpu) · @Labels.Memory(instance.MemoryMb) · @Labels.Storage(instance.StorageGb) disk</td>
                         <td><partial name="_Time" model="@((DateTime?)instance.CreatedAt)" /></td>
+                        <td class="cell-actions">
+                            <a class="button button-quiet" href="@Url.Content("~" + Routes.Databases(instance.Id))">Databases<span class="visually-hidden"> of @instance.Name</span></a>
+                            @if (Offered.DeleteInstance(User, instance))
+                            {
+                                <a class="button button-quiet button-danger" href="@Url.Content("~" + Routes.DeleteInstance(instance.Id))">Delete<span class="visually-hidden"> @instance.Name</span></a>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-    <p class="table-note">Showing @Model.Instances.Items.Count of @Model.Instances.TotalCount.</p>
+    <partial name="_Pager" model="@(new Pager(Routes.Instances, Model.Instances.Page, Model.Instances.PageSize, Model.Instances.Items.Count, Model.Instances.TotalCount))" />
 }

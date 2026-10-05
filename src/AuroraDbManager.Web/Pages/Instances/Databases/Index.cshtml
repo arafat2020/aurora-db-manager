@@ -1,0 +1,38 @@
+@page "/instances/{id:guid}/databases"
+@model AuroraDbManager.Web.Pages.Instances.Databases.IndexModel
+@using AuroraDbManager.Api.Domain.Instances
+@{
+    var instance = Model.Instance;
+    ViewData["Title"] = $"Databases · {instance.Name}";
+    var create = Offered.CreateDatabase(User, instance) ? new PageAction("Create database", Routes.CreateDatabase(instance.Id)) : null;
+    var header = new PageHeader("Databases", $"The databases in {instance.Name}, a {Labels.For(instance.Engine)} {instance.Version} instance.", create)
+    {
+        Breadcrumbs = [new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)), new Crumb("Databases")]
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (instance.Status != InstanceStatus.Running)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Neutral, "Databases can be created and deleted only while the instance is running.", $"The instance is {StatusBadge.For(instance.Status).Label.ToLowerInvariant()}"))" />
+}
+
+@if (Model.Databases.TotalCount == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("No databases yet", create is not null
+        ? "Create the first database in this instance."
+        : instance.Status == InstanceStatus.Running ? "An operator or an administrator creates them." : "Databases can only be created in a running instance.", "databases", create))" />
+}
+else if (Model.Databases.Items.Count == 0)
+{
+    <partial name="_EmptyState" model="@(new EmptyState("Nothing on this page", $"There are {Model.Databases.TotalCount} databases, and this page is past the last of them.", "search", new PageAction("Back to the first page", Routes.Databases(instance.Id), ActionTone.Plain)))" />
+}
+else
+{
+    @if (Model.InProgress)
+    {
+        <partial name="_InProgress" model="@Routes.Databases(instance.Id)" />
+    }
+    <partial name="_DatabaseTable" model="@(new DatabaseTable(instance, Model.Databases.Items))" />
+    <partial name="_Pager" model="@(new Pager(Routes.Databases(instance.Id), Model.Databases.Page, Model.Databases.PageSize, Model.Databases.Items.Count, Model.Databases.TotalCount))" />
+}

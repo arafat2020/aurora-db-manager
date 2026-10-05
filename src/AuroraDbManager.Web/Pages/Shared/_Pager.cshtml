@@ -1,0 +1,17 @@
+@model Pager
+<nav class="pager" aria-label="Pages">
+    <span class="table-note">Showing @Model.First–@Model.Last of @Model.TotalCount.</span>
+    @if (Model.PreviousPath is not null || Model.NextPath is not null)
+    {
+        <span class="pager-links">
+            @if (Model.PreviousPath is not null)
+            {
+                <a class="button" href="@Url.Content("~" + Model.PreviousPath)" rel="prev">Previous</a>
+            }
+            @if (Model.NextPath is not null)
+            {
+                <a class="button" href="@Url.Content("~" + Model.NextPath)" rel="next">Next</a>
+            }
+        </span>
+    }
+</nav>

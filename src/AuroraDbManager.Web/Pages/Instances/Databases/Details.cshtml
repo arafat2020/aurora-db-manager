@@ -1,0 +1,86 @@
+@page "/instances/{id:guid}/databases/{databaseId:guid}"
+@model AuroraDbManager.Web.Pages.Instances.Databases.DetailsModel
+@using AuroraDbManager.Api.Domain.Databases
+@{
+    var instance = Model.Instance;
+    var database = Model.Database;
+    ViewData["Title"] = $"{database.Name} · {instance.Name}";
+    var header = new PageHeader(
+        database.Name,
+        $"A database in {instance.Name}.",
+        Offered.DeleteDatabase(User, instance, database) ? new PageAction("Delete database", Routes.DeleteDatabase(instance.Id, database.Id), ActionTone.Danger) : null)
+    {
+        Breadcrumbs =
+        [
+            new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)),
+            new Crumb("Databases", Routes.Databases(instance.Id)), new Crumb(database.Name)
+        ],
+        Status = StatusBadge.For(database.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.InProgress)
+{
+    <partial name="_InProgress" model="@Routes.Database(instance.Id, database.Id)" />
+}
+
+@if (database.Error is not null)
+{
+    <partial name="_Alert" model="@(new Alert(StatusTone.Danger, database.Error.Message, database.Error.Code))" />
+}
+
+<section class="section" aria-labelledby="overview-title">
+    <div class="section-header">
+        <h2 id="overview-title">Overview</h2>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Name</dt>
+                <dd class="mono">@database.Name</dd>
+                <dt>Status</dt>
+                <dd>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(database.Status)" />
+                    <span class="muted">
+                        @(database.Status switch
+                        {
+                            DatabaseStatus.Creating => "The database is being created in the instance's server. It is ready once that is done.",
+                            DatabaseStatus.Ready => "The database exists in the instance's server.",
+                            DatabaseStatus.Deleting => "The database is being dropped from the instance's server. It disappears from here once that is done.",
+                            _ => "The last operation on this database failed for good."
+                        })
+                    </span>
+                </dd>
+                <dt>Instance</dt>
+                <dd>
+                    <a href="@Url.Content("~" + Routes.Instance(instance.Id))">@instance.Name</a>
+                    <partial name="_StatusBadge" model="@StatusBadge.For(instance.Status)" />
+                </dd>
+                <dt>Engine</dt>
+                <dd>@Labels.For(instance.Engine) @instance.Version</dd>
+                <dt>Created</dt>
+                <dd><partial name="_Time" model="@((DateTime?)database.CreatedAt)" /></dd>
+                <dt>Last changed</dt>
+                <dd><partial name="_Time" model="@((DateTime?)database.UpdatedAt)" /></dd>
+                <dt>ID</dt>
+                <dd class="mono">@database.Id</dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="operations-title">
+    <div class="section-header">
+        <h2 id="operations-title">Recent operations</h2>
+        <span class="section-note"><a href="~/jobs">All jobs</a></span>
+    </div>
+    @if (Model.Jobs.Items.Count == 0)
+    {
+        <partial name="_EmptyState" model="@(new EmptyState("No operations", "Nothing has been done to this database in the background.", "jobs"))" />
+    }
+    else
+    {
+        <partial name="_RecentJobs" model="@Model.Jobs" />
+    }
+</section>

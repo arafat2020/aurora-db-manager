@@ -100,16 +100,17 @@ public sealed class UiSmokeTests : IDisposable
 
         var html = await _browser.GetHtmlAsync("/instances");
 
-        Assert.Contains("No instances yet", html, StringComparison.Ordinal);
-        Assert.Contains("POST /api/v1/instances", html, StringComparison.Ordinal);
+        Assert.Contains("No database instances yet", html, StringComparison.Ordinal);
+        Assert.Contains("Create your first PostgreSQL or MySQL instance.", html, StringComparison.Ordinal);
+        Assert.Contains("href=\"/instances/create\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<table", html, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Instances_AreListed_WithTheirStatusInWords_AndTheErrorCodeOfAFailedOne()
     {
-        await _factory.CreateRunningInstanceAsync(_api, name: "production-db");
-        await _factory.CreateRunningInstanceAsync(_api, name: "analytics", engine: "mysql");
+        var production = await _factory.CreateRunningInstanceAsync(_api, name: "production-db");
+        var analytics = await _factory.CreateRunningInstanceAsync(_api, name: "analytics", engine: "mysql");
         var (_, pending) = await _api.CreateInstanceAsync(name: "still-provisioning");
         var (_, failing) = await _api.CreateInstanceAsync(name: "broken");
         _factory.Provisioner.FailAllCalls();
@@ -120,13 +121,13 @@ public sealed class UiSmokeTests : IDisposable
 
         Assert.Contains("<caption>Instances, newest first</caption>", html, StringComparison.Ordinal);
         Assert.Contains("<th scope=\"col\">Status</th>", html, StringComparison.Ordinal);
-        Assert.Contains("<td class=\"cell-primary\">production-db</td> <td>PostgreSQL 16</td>", html, StringComparison.Ordinal);
-        Assert.Contains("<td class=\"cell-primary\">analytics</td> <td>MySQL 16</td>", html, StringComparison.Ordinal);
+        Assert.Contains($"<td class=\"cell-primary\"><a href=\"/instances/{production}\">production-db</a></td> <td>PostgreSQL 16</td>", html, StringComparison.Ordinal);
+        Assert.Contains($"<td class=\"cell-primary\"><a href=\"/instances/{analytics}\">analytics</a></td> <td>MySQL 16</td>", html, StringComparison.Ordinal);
         // Every status is a word with a mark, not a colour.
         Assert.Matches("<span class=\"badge badge-success\"><svg[^>]*aria-hidden=\"true\".*?</svg> Running</span>", html);
         Assert.Matches("<span class=\"badge badge-progress\"><svg.*?</svg> Provisioning</span>", html);
         Assert.Matches("<span class=\"badge badge-danger\"><svg.*?</svg> Failed</span> <code>PROVISIONING_FAILED</code>", html);
-        Assert.Contains("Showing 4 of 4.", html, StringComparison.Ordinal);
+        Assert.Contains("Showing 1–4 of 4.", html, StringComparison.Ordinal);
         Assert.Contains("<time datetime=\"", html, StringComparison.Ordinal);
         Assert.NotEqual(pending, failing);
     }
@@ -165,7 +166,6 @@ public sealed class UiSmokeTests : IDisposable
     // --- Sections that are still to come -------------------------------------------------------
 
     [Theory]
-    [InlineData("/databases", "/api/v1/instances/{id}/databases")]
     [InlineData("/backups", "/api/v1/databases/{id}/backups")]
     [InlineData("/schedules", "/api/v1/databases/{id}/backup-schedule")]
     [InlineData("/monitoring", "/api/v1/monitoring/summary")]

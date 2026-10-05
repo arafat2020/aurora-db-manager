@@ -1,0 +1,8 @@
+@* What the page before this one did, said once. *@
+@{
+    var flash = Flash.Take(TempData);
+}
+@if (flash is not null)
+{
+    <partial name="_Alert" model="@flash" />
+}

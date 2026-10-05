@@ -1,9 +1,10 @@
 # The UI
 
 Aurora has a server-rendered administration UI, built with ASP.NET Core Razor Pages in
-`src/AuroraDbManager.Web`. This document describes its foundation: how it relates to the API, how
-users sign in to it, how it is put together, and how to build on it. The pages that manage
-instances, databases, backups, schedules and users come in later phases.
+`src/AuroraDbManager.Web`. This document describes its foundation, how it relates to the API, how
+users sign in to it, how it is put together and how to build on it, and the pages that manage
+[instances and databases](#instances-and-databases). The pages that manage backups, schedules and
+users come in later phases.
 
 ```text
 Browser      ──►  Web  ──►  cookie authentication  ──►  pages  ──┐
@@ -141,8 +142,11 @@ The UI uses the roles and the policies the API uses (`AuroraPolicies`); it has n
 
 | Section | viewer | operator | admin |
 | --- | :---: | :---: | :---: |
-| Overview, Instances, Databases, Backups, Schedules, Jobs, Monitoring | ✔ | ✔ | ✔ |
+| Overview, Instances, Backups, Schedules, Jobs, Monitoring | ✔ | ✔ | ✔ |
 | Users | | | ✔ |
+
+What each role may do with instances and databases is in
+[Instances and databases](#who-may-do-what).
 
 ## Project structure
 
@@ -156,17 +160,24 @@ src/AuroraDbManager.Web/
 │   ├── Shared/              layouts and partials
 │   │   ├── _Layout.cshtml         the application shell
 │   │   ├── _BareLayout.cshtml     sign-in, and errors for someone who is not signed in
-│   │   ├── _PageHeader.cshtml     title, description, primary action
+│   │   ├── _PageHeader.cshtml     breadcrumbs, title, status, description, primary action
 │   │   ├── _StatusBadge.cshtml    a status: mark, word, colour
 │   │   ├── _Alert.cshtml          a message
 │   │   ├── _EmptyState.cshtml     what a page shows when it has nothing to show
 │   │   ├── _Time.cshtml           an instant, in UTC
+│   │   ├── _Flash.cshtml          the message a change left for the next page
+│   │   ├── _Pager.cshtml          which part of a list is shown, and the way to the rest
+│   │   ├── _InProgress.cshtml     work is in progress: refresh
+│   │   ├── _DatabaseTable.cshtml  the databases of an instance
+│   │   ├── _RecentJobs.cshtml     the last few operations on an instance or a database
 │   │   ├── _Icon.cshtml           the icons, inline
 │   │   └── _ConfirmDialog.cshtml  the one confirmation dialog
 │   ├── Index.cshtml               the overview
 │   ├── Login / Logout / Error
-│   ├── Instances, Jobs, Users     read-only lists
-│   ├── Databases, Backups, Schedules, Monitoring   placeholders
+│   ├── Instances/                 list, create, details, delete
+│   │   └── Databases/             an instance's databases: list, create, details, delete
+│   ├── Jobs, Users                read-only lists
+│   ├── Backups, Schedules, Monitoring   placeholders
 │   └── Styleguide.cshtml          every building block (development only)
 └── wwwroot/
     ├── css/aurora.css
@@ -226,6 +237,122 @@ states. It is not served outside development.
   server's own checks are what protect the data either way.
 - **Errors from a service** are shown with `_Alert`, using the service's stable error code and
   message. They are written for clients and are safe to show.
+- **A message for the next page** ("Instance creation started.") is left with `Announce(…)` on a
+  `ResourcePageModel` and shown once, by the layout, on the page the change redirects to. It
+  travels in an encrypted, `HttpOnly`, `SameSite=Strict` cookie (`aurora.flash`), never in an
+  address, and is a sentence, never a secret. There is no client-side notification system.
+- **Breadcrumbs** for a page under another: `new PageHeader(…) { Breadcrumbs = [new Crumb("Instances",
+  Routes.Instances), new Crumb(instance.Name)] }`.
+
+## Instances and databases
+
+These pages are the control panel: they list, create, inspect and delete instances and the
+databases inside them. They are a presentation of `InstanceService`, `InstanceHealthService`,
+`DatabaseService` and `JobService`, the services behind `/api/v1/instances`, `/api/v1/databases`
+and `/api/v1/jobs`, and of nothing else: no page touches EF Core or Docker, and no rule about
+instances or databases was added to, or copied into, the Web project.
+
+```text
+Razor Page  ──►  InstanceService / DatabaseService / InstanceHealthService / JobService
+                        ──►  domain  ──►  infrastructure (system database, job queue, Docker)
+```
+
+### Pages
+
+| Address | Page | Reads and calls |
+| --- | --- | --- |
+| `/instances` | The instances, 20 to a page (`?page=2`) | `InstanceService.ListAsync` |
+| `/instances/create` | The form that creates one | `InstanceService.CreateAsync` |
+| `/instances/{id}` | One instance: overview, health, its databases, recent operations | `InstanceService.GetAsync`, `InstanceHealthService.GetAsync`, `DatabaseService.ListAsync`, `JobService.ListAsync` |
+| `/instances/{id}/delete` | The question, and the form that deletes | `InstanceService.DeleteAsync` |
+| `/instances/{id}/databases` | The instance's databases, 20 to a page | `DatabaseService.ListAsync` |
+| `/instances/{id}/databases/create` | The form that creates one | `DatabaseService.CreateAsync` |
+| `/instances/{id}/databases/{databaseId}` | One database: overview, recent operations | `DatabaseService.GetAsync`, `JobService.ListAsync` |
+| `/instances/{id}/databases/{databaseId}/delete` | The question, and the form that deletes | `DatabaseService.DeleteAsync` |
+
+Ids are GUIDs; anything else in their place is no page. A database is always addressed under its
+instance, and a database of another instance is not found there. There is no top-level
+*Databases* section: nothing lists databases across instances, in the application or in the API,
+so they are reached through *Instances*.
+
+### Who may do what
+
+| | viewer | operator | admin |
+| --- | :---: | :---: | :---: |
+| See instances, their details, health and databases | ✔ | ✔ | ✔ |
+| Create and delete a database | | ✔ | ✔ |
+| Create and delete an instance | | | ✔ |
+
+The pages that create and delete carry the policy of the API endpoint that does the same
+(`[Authorize(Policy = AuroraPolicies.Admin)]` or `…Operator`), for the form and for its
+submission alike. A user without the role gets the `403` page, whether they followed a link,
+typed the address or sent the form by hand. Buttons a role cannot use are not shown, and that is
+only a courtesy (`Offered` decides what is shown; the policy decides what is done).
+
+### Changes
+
+- **Every change is a `POST` with an antiforgery token**, and a `GET` changes nothing, whatever
+  it carries in its address. Without a valid token the answer is the `400` page.
+- **Deleting asks first, on a page of its own.** The *Delete* buttons are links to
+  `…/delete`, which says what will be removed (for an instance: its server, all its data and how
+  many databases) and that it cannot be undone, with *Cancel* and one button that does it. The
+  page works without JavaScript, pre-selects nothing, and asks nothing to be typed.
+- **Validation is the application's.** The instance form fills in a `CreateInstanceRequest` and
+  checks it with that class's own rules, the ones the API applies, so limits on names, CPU,
+  memory and storage are the API's limits. The database form passes the name to
+  `DatabaseService`, whose `DatabaseName` rule answers. Messages appear at the fields, what was
+  typed is kept, and the response is `422`.
+- **Engines and versions are the image catalog's.** The form offers every engine with the
+  versions `DockerImageResolver` can run, as one choice, and accepts nothing else. The UI has no
+  list of its own.
+- **A refusal is shown where it happened.** When a service says no (the instance is still
+  provisioning, a backup is running, the name is taken, Docker cannot be reached) the page comes
+  back with the API's stable error code and sentence, and the API's status (`409`, or `503`).
+- **Submitting twice.** A submitted form disables its button. That is a convenience; what makes
+  a repeat safe is the application: a second database of the same name is refused
+  (`DATABASE_ALREADY_EXISTS`), as is a second delete (`DATABASE_DELETING`, or *not found* for an
+  instance). Creating an instance has no such key, here or in the API: two submissions that both
+  arrive are two instances.
+
+### Work that takes a while
+
+Only deleting an instance happens within the request. Everything else is accepted and then done
+by a job, and the pages say exactly that:
+
+| Action | What the application does | What the user sees |
+| --- | --- | --- |
+| Create instance | stores it as `provisioning` with a `provision_instance` job | *Instance creation started. The instance is being provisioned.*, on the instance's page, status **Provisioning** |
+| Create database | stores it as `creating` with a `create_database` job | *Database creation started.*, on the database's page, status **Creating** |
+| Delete database | marks it `deleting` with a `delete_database` job | *Deletion of database … started.*, on the list, status **Deleting**; it disappears when the job is done |
+| Delete instance | removes the server and the data, then the record | *Instance … was deleted.*, on the list |
+
+No page says *created* or *deleted* before the application does. A status is always the one on
+record at the time the page was rendered. While something on a page is on its way, the page shows
+*Work is in progress* with a **Refresh** link, and, with JavaScript, reloads itself every five
+seconds: only while it is visible, never under an open menu or a submitted form, and at most 60
+times in a row. A reload is an ordinary request, so an ended session leads to the sign-in page.
+There is no polling of an endpoint, no SignalR and no client-side state.
+
+What is offered follows the status on record: no *Delete* for an instance that is provisioning,
+no *Create database* unless the instance is running, no *Delete* for a database that is not
+ready. This is not a second set of rules; a request that arrives anyway is answered by the
+service, and so is one the page could not have known about, such as a backup in progress.
+
+### Health
+
+The *Health* section of an instance's page is `InstanceHealthService.GetAsync`, the check behind
+`GET /api/v1/instances/{id}/health`, made once when the page is rendered and repeated by *Check
+again* (a link to the page). It is shown as **Healthy**, **Degraded** or **Unhealthy** with a
+sentence, whether the server is running and whether connections are accepted. Container names
+and other Docker details are not shown. Health is an observation and changes nothing: an
+instance can be *Running* on record and *Unhealthy* in fact, and the page shows both. While an
+instance is being provisioned there is no server to check, and the page says so rather than
+reporting it as unhealthy.
+
+### Credentials
+
+No page shows, embeds or logs a credential. The administrator password of an instance stays in
+the secret store, as it does for the API; the pages never ask for it.
 
 ## Styling
 
@@ -244,11 +371,12 @@ no web font; the UI uses the system font.
 
 ### JavaScript
 
-`wwwroot/js/aurora.js` is progressive enhancement, about a hundred lines: the menu button on
-small screens, closing the account menu, marking a submitted form as busy so it cannot be sent
-twice, and the confirmation dialog. It stores nothing, requests nothing, and nothing depends on
-it. Later phases may add small things of the same kind (auto-refresh, and SignalR for live job
-and instance status); nothing has been prepared for them yet, on purpose.
+`wwwroot/js/aurora.js` is progressive enhancement, well under two hundred lines: the menu button
+on small screens, closing the account menu, marking a submitted form as busy so it cannot be sent
+twice, the confirmation dialog, and reloading a page that shows work in progress (see
+[Work that takes a while](#work-that-takes-a-while)). It stores nothing, makes no request of its
+own, and nothing depends on it. A later phase may add live updates (SignalR) for job and instance
+status; nothing has been prepared for that yet, on purpose.
 
 ## Errors
 
@@ -258,10 +386,12 @@ Failures on a page are answered with a page; failures in the API with JSON, as b
 | --- | --- |
 | Not signed in | redirect to `/login`, returning to the page afterwards |
 | Not allowed (`403`) | *You don't have permission*, at the address that was asked for |
-| Not found (`404`) | *Page not found*, with a way back |
+| Not found (`404`) | *Page not found*, with a way back; *Instance not found* or *Database not found* where a page looked for one |
 | Missing or stale antiforgery token (`400`) | *That request could not be processed* |
 | A conflict reported by a service (`409`) | the service's message, on the page that made the request |
-| Invalid input | messages at the fields, on the form |
+| Invalid input (`422`) | messages at the fields, on the form, with what was typed |
+| A list page that is not a page (`?page=0`) (`400`) | *That request could not be processed* |
+| An instance's server cannot be removed (`503`) | the service's message, on the delete page; nothing was deleted |
 | Too many sign-in attempts (`429`) | *Too many attempts*, and when to try again |
 | Anything unexpected (`500`) | *Something went wrong* |
 
@@ -288,6 +418,8 @@ same logging rules. What is specific to the UI:
   pages simply contain no inline script or style.
 - **Antiforgery** on every state-changing request, with its own `HttpOnly`, `SameSite=Strict`
   cookie.
+- **No credentials in pages.** Instance passwords are never rendered, put in a hidden field, an
+  address, a message or a log.
 - **Cookies** as described above.
 - **Pages are not cached** (`Cache-Control: no-store`): nothing is left behind after signing out.
   Styles and scripts are public and cached, with a version in their address.
@@ -328,8 +460,9 @@ edit a `.cshtml`, `.css` or `.js` file and reload. `/styleguide` shows the build
 `/openapi/v1.json` the API, in development only.
 
 UI tests are in `tests/AuroraDbManager.Api.Tests/Ui`. They run the real Web host in-process,
-sign in through the real form, and read the HTML that comes back. There are no browser-driven
-tests yet; they are worth adding once pages have real interactions.
+sign in through the real form, submit forms with the antiforgery token of the page they are on,
+and read the HTML that comes back. Jobs are run by the test, one at a time, so the states between
+*asked for* and *done* are looked at as they are. There are no browser-driven tests.
 
 ## Deployment
 
@@ -355,8 +488,6 @@ stylesheet and script (pre-compressed). No Node, no asset pipeline, no separate 
 
 Each of these builds on the shell, the components and the rules above:
 
-- instance management: create, inspect, delete
-- database management
 - backups and restores
 - backup schedules
 - jobs: filtering, paging, detail

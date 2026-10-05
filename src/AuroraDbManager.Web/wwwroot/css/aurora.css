@@ -64,6 +64,7 @@
   --danger: #a8261d;
   --danger-soft: #fbe6e3;
   --danger-hover: #8a1e17;
+  --danger-contrast: #ffffff;
 
   --shadow: 0 1px 2px rgb(16 24 40 / 6%);
 }
@@ -95,6 +96,7 @@
     --danger: #ff9b90;
     --danger-soft: #3d1815;
     --danger-hover: #ffb4ab;
+    --danger-contrast: #3a0f0b;
 
     --shadow: none;
   }
@@ -408,6 +410,50 @@ svg.icon {
   color: var(--text-muted);
 }
 
+/* A title with the status of what it names next to it. */
+.page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.page-title h1 {
+  overflow-wrap: anywhere;
+}
+
+/* Where a page is: Instances / production-db / Databases */
+.breadcrumbs {
+  margin-bottom: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs li {
+  display: inline-flex;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.breadcrumbs li + li::before {
+  content: "/";
+  color: var(--text-faint);
+}
+
+.breadcrumbs [aria-current] {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .section {
   margin-bottom: var(--space-6);
 }
@@ -425,6 +471,12 @@ svg.icon {
   font-size: var(--text-sm);
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -434,6 +486,25 @@ svg.icon {
 
 .card-body {
   padding: var(--space-4);
+}
+
+/* A card that holds a form: no wider than a form reads well. */
+.form-card {
+  max-width: 44rem;
+}
+
+/* A card that asks about something that cannot be undone. */
+.card-danger {
+  border-color: var(--danger);
+  border-left-width: 4px;
+}
+
+.consequences {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-muted);
 }
 
 .stat-grid {
@@ -489,7 +560,13 @@ a.stat:hover {
 }
 
 .definition-list dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .link-list {
@@ -550,6 +627,19 @@ a.stat:hover {
 .button-danger:hover {
   background: var(--danger-soft);
   color: var(--danger-hover);
+}
+
+/* The button that does the irreversible thing itself, on the page that asked about it. */
+.button-danger-solid {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+.button-danger-solid:hover {
+  border-color: var(--danger-hover);
+  background: var(--danger-hover);
+  color: var(--danger-contrast);
 }
 
 .button-quiet {
@@ -638,9 +728,19 @@ a.stat:hover {
   gap: var(--space-2);
 }
 
+/* Short fields that belong together, side by side while there is room. */
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  align-items: start;
+  gap: var(--space-4);
+}
+
 /* Tables */
 
 .table-wrap {
+  /* Positioned, so that what is hidden inside a cell scrolls with the table and not with the page. */
+  position: relative;
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -698,6 +798,38 @@ a.stat:hover {
 
 .table .cell-actions {
   text-align: right;
+}
+
+.table .cell-actions .button {
+  min-height: 1.75rem;
+  padding: 0.15rem var(--space-2);
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.pager-links {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* Something on the page is on its way to another status. */
+.in-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  color: var(--text-muted);
+}
+
+.in-progress .spinner {
+  flex: none;
 }
 
 .table-note {
@@ -972,5 +1104,27 @@ a.stat:hover {
 
   .user-name {
     display: none;
+  }
+
+  .section-header {
+    flex-wrap: wrap;
+  }
+
+  /* Each term above its value, instead of beside it. */
+  .definition-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .definition-list dt {
+    font-size: var(--text-sm);
+  }
+
+  .definition-list dd {
+    margin-bottom: var(--space-3);
+  }
+
+  .definition-list dd:last-child {
+    margin-bottom: 0;
   }
 }

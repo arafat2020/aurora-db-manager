@@ -5,6 +5,6 @@
     <p class="state-message">@Model.Message</p>
     @if (Model.Action is not null)
     {
-        <a class="button button-primary state-action" href="@Url.Content("~" + Model.Action.Path)">@Model.Action.Label</a>
+        <a class="@Model.Action.CssClass state-action" href="@Url.Content("~" + Model.Action.Path)">@Model.Action.Label</a>
     }
 </div>

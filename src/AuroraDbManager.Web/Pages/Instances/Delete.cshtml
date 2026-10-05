@@ -1,0 +1,41 @@
+@page "/instances/{id:guid}/delete"
+@model AuroraDbManager.Web.Pages.Instances.DeleteModel
+@{
+    var instance = Model.Instance;
+    ViewData["Title"] = $"Delete {instance.Name}";
+    var header = new PageHeader("Delete instance?", $"{instance.Name} · {Labels.For(instance.Engine)} {instance.Version}")
+    {
+        Breadcrumbs = [new Crumb("Instances", Routes.Instances), new Crumb(instance.Name, Routes.Instance(instance.Id)), new Crumb("Delete")],
+        Status = StatusBadge.For(instance.Status)
+    };
+}
+<partial name="_PageHeader" model="@header" />
+
+@if (Model.Problem is not null)
+{
+    <partial name="_Alert" model="@Model.Problem" />
+}
+
+<div class="card card-danger form-card">
+    <div class="card-body stack">
+        <p>This permanently removes the instance <strong>@instance.Name</strong>, its database server and all the data in it.</p>
+        <ul class="consequences">
+            @if (Model.DatabaseCount > 0)
+            {
+                <li><strong>@Model.DatabaseCount database@(Model.DatabaseCount == 1 ? "" : "s")</strong> in this instance @(Model.DatabaseCount == 1 ? "is" : "are") deleted with it.</li>
+                <li>The records of their backups and their backup schedules are removed. Backup files already in the backup storage are kept.</li>
+            }
+            else
+            {
+                <li>The instance has no databases.</li>
+            }
+            <li>This cannot be undone.</li>
+        </ul>
+        <form method="post" class="form">
+            <div class="form-actions">
+                <a class="button" href="@Url.Content("~" + Routes.Instance(instance.Id))">Cancel</a>
+                <button type="submit" class="button button-danger-solid" data-busy-label="Deleting…">Delete instance</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -15,7 +15,7 @@
             <span class="muted">
                 @if (external.Enabled)
                 {
-                    <text>The database port is published on this server. Whether it can be reached from other machines depends on the address it is bound to and on this server's firewall and network.</text>
+                    <text>The database port is published on this host. Whether it can be reached from other machines depends on the address it is bound to and on this host's firewall and network.</text>
                 }
                 else
                 {
@@ -33,7 +33,7 @@
                 }
                 else
                 {
-                    <span class="muted">This server's address. Set <code>ExternalAccess:AdvertisedHost</code> to have it shown here.</span>
+                    <span class="muted">This host's address. Set <code>ExternalAccess:AdvertisedHost</code> to have it shown here.</span>
                 }
             </dd>
             <dt>Port</dt>
@@ -44,15 +44,15 @@
                 <span class="muted">
                     @if (ExternalAccess.Value.BindsEveryInterface)
                     {
-                        <text>Every network interface of this server.</text>
+                        <text>Every network interface of this host.</text>
                     }
                     else if (System.Net.IPAddress.IsLoopback(System.Net.IPAddress.Parse(external.BindAddress)))
                     {
-                        <text>This server only: other machines cannot connect.</text>
+                        <text>This host only: other machines cannot connect.</text>
                     }
                     else
                     {
-                        <text>One network interface of this server.</text>
+                        <text>One network interface of this host.</text>
                     }
                 </span>
             </dd>

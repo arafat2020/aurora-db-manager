@@ -121,8 +121,8 @@ public sealed partial class UiConnectivityTests : IDisposable
 
         Assert.Contains("<h1>Enable external access?</h1>", question, StringComparison.Ordinal);
         Assert.Contains("This exposes the database port of <strong>orders</strong> outside the Docker network", question, StringComparison.Ordinal);
-        Assert.Contains("The port is bound to <strong class=\"mono\">127.0.0.1</strong>: this server only. Other machines cannot connect.", question, StringComparison.Ordinal);
-        Assert.Contains("It does not open or close this server's firewall, a cloud security group", question, StringComparison.Ordinal);
+        Assert.Contains("The port is bound to <strong class=\"mono\">127.0.0.1</strong>: this host only. Other machines cannot connect.", question, StringComparison.Ordinal);
+        Assert.Contains("It does not open or close this host's firewall, a cloud security group", question, StringComparison.Ordinal);
         Assert.Contains("<strong>The database server is restarted.</strong> Its data is kept, and it is unavailable to its clients until it is up again", question, StringComparison.Ordinal);
         Assert.Contains($"<a class=\"button\" href=\"/instances/{instanceId}\">Cancel</a>", question, StringComparison.Ordinal);
         Assert.Contains($"<form method=\"post\" class=\"form\" action=\"/instances/{instanceId}/external-access?handler=Enable\">", question, StringComparison.Ordinal);
@@ -143,10 +143,10 @@ public sealed partial class UiConnectivityTests : IDisposable
         var connection = Section(html, "connection-title");
         Assert.Matches("<div class=\"alert alert-success\" role=\"status\">.*?External access enabled on host port 15432\\. The database server was restarted\\.", html);
         Assert.Matches("<dt>External access</dt> <dd> <span class=\"badge badge-warning\"><svg.*?</svg> Enabled</span>", connection);
-        Assert.Contains("Whether it can be reached from other machines depends on the address it is bound to and on this server's firewall and network.", connection, StringComparison.Ordinal);
+        Assert.Contains("Whether it can be reached from other machines depends on the address it is bound to and on this host's firewall and network.", connection, StringComparison.Ordinal);
         Assert.Contains("<dt>Host</dt> <dd> <span class=\"mono\">127.0.0.1</span> </dd>", connection, StringComparison.Ordinal);
         Assert.Contains("<dt>Port</dt> <dd class=\"mono\">15432</dd>", connection, StringComparison.Ordinal);
-        Assert.Contains("<dt>Bound to</dt> <dd> <span class=\"mono\">127.0.0.1</span> <span class=\"muted\"> This server only: other machines cannot connect. </span> </dd>", connection, StringComparison.Ordinal);
+        Assert.Contains("<dt>Bound to</dt> <dd> <span class=\"mono\">127.0.0.1</span> <span class=\"muted\"> This host only: other machines cannot connect. </span> </dd>", connection, StringComparison.Ordinal);
         Assert.Contains("<dt>Protocol</dt> <dd>PostgreSQL</dd>", connection, StringComparison.Ordinal);
         Assert.Contains("<pre class=\"snippet\" id=\"connection-details\">Engine: PostgreSQL Host: 127.0.0.1 Port: 15432 Username: postgres</pre>", connection, StringComparison.Ordinal);
         // Copying is an enhancement: the button is there, hidden until script finds that it works.

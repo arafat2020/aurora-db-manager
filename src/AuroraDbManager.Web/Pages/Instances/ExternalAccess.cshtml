@@ -29,24 +29,24 @@ else if (instance.Status != InstanceStatus.Running)
     <div class="card-body stack">
         @if (!enabled)
         {
-            <p>This exposes the database port of <strong>@instance.Name</strong> outside the Docker network, on a port of this server that Aurora picks.</p>
+            <p>This exposes the database port of <strong>@instance.Name</strong> outside the Docker network, on a port of this host that Aurora picks.</p>
             <ul class="consequences">
                 <li>
                     The port is bound to <strong class="mono">@settings.NormalizedBindAddress</strong>:
                     @if (settings.BindsEveryInterface)
                     {
-                        <text>every network interface of this server. Other machines can reach it unless a firewall stops them.</text>
+                        <text>every network interface of this host. Other machines can reach it unless a firewall stops them.</text>
                     }
                     else if (System.Net.IPAddress.IsLoopback(System.Net.IPAddress.Parse(settings.NormalizedBindAddress)))
                     {
-                        <text>this server only. Other machines cannot connect.</text>
+                        <text>this host only. Other machines cannot connect.</text>
                     }
                     else
                     {
-                        <text>one network interface of this server. Machines that can reach that address can connect unless a firewall stops them.</text>
+                        <text>one network interface of this host. Machines that can reach that address can connect unless a firewall stops them.</text>
                     }
                 </li>
-                <li>Aurora publishes the port in Docker and nothing more. It does not open or close this server's firewall, a cloud security group, or anything else in front of it.</li>
+                <li>Aurora publishes the port in Docker and nothing more. It does not open or close this host's firewall, a cloud security group, or anything else in front of it.</li>
                 <li>Every database in this instance becomes reachable on that port by anyone who can reach it and has a password.</li>
                 <li><strong>The database server is restarted.</strong> Its data is kept, and it is unavailable to its clients until it is up again, usually a few seconds.</li>
             </ul>

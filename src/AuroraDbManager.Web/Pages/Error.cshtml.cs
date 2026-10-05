@@ -75,7 +75,7 @@ public sealed class ErrorModel : PageModel
                 "warning"),
             StatusCodes.Status413PayloadTooLarge => (
                 "That request is too large",
-                "What was sent is larger than this server accepts.",
+                "What was sent is larger than Aurora accepts.",
                 "warning"),
             StatusCodes.Status429TooManyRequests => (
                 "Too many attempts",

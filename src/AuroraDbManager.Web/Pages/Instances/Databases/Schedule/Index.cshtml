@@ -87,7 +87,7 @@ else
     <p class="table-note">
         A backup the schedule causes is an ordinary backup: it appears among the database's
         <a href="@Url.Content("~" + Routes.Backups(instance.Id, database.Id))">backups</a> and its
-        <a href="@Url.Content("~" + Routes.JobsOfDatabase(database.Id))">jobs</a> like one that was asked for by hand, and goes to the storage this server is configured with.
+        <a href="@Url.Content("~" + Routes.JobsOfDatabase(database.Id))">jobs</a> like one that was asked for by hand, and goes to the storage Aurora is configured with.
         An occurrence that finds the database busy or unavailable is skipped; occurrences missed while Aurora was down are made up for by one backup.
     </p>
 }

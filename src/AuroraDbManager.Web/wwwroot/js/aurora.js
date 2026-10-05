@@ -5,6 +5,7 @@
 //   - forms marked data-confirm ask before they are submitted
 //   - a page that shows work in progress reloads itself, for a while, while it is looked at
 //   - buttons marked data-copy copy the text of an element, where the browser lets them
+//   - tables can be shown a row at a time on narrow screens, each value with its column's name
 
 (function () {
   "use strict";
@@ -94,6 +95,39 @@
       pending = null;
     });
   }
+
+  // Tables. On a narrow screen the stylesheet shows each row of a .table-stack as a block of its
+  // own, every value next to the name of its column, instead of a table that has to be scrolled
+  // sideways. That takes the column names at the cells, and, because a table that is not laid
+  // out as one stops being one for assistive technology, its roles said outright. Without this
+  // script a table stays a table and scrolls inside its frame.
+  document.querySelectorAll("table.table").forEach(function (table) {
+    var names = Array.prototype.map.call(table.querySelectorAll("thead th"), function (header) {
+      return header.textContent.trim();
+    });
+    if (names.length === 0) {
+      return;
+    }
+    table.setAttribute("role", "table");
+    table.querySelectorAll("thead, tbody").forEach(function (group) {
+      group.setAttribute("role", "rowgroup");
+    });
+    table.querySelectorAll("tr").forEach(function (row) {
+      row.setAttribute("role", "row");
+    });
+    table.querySelectorAll("th").forEach(function (header) {
+      header.setAttribute("role", "columnheader");
+    });
+    table.querySelectorAll("tbody tr").forEach(function (row) {
+      Array.prototype.forEach.call(row.children, function (cell, index) {
+        cell.setAttribute("role", "cell");
+        if (names[index]) {
+          cell.dataset.label = names[index];
+        }
+      });
+    });
+    table.classList.add("table-stack");
+  });
 
   // Copying: <button data-copy="#connection-string" hidden>. The button is hidden until this has
   // found that copying works here; the text it would copy is on the page either way.

@@ -28,7 +28,7 @@
                     <td>@job.Attempt of @job.MaxAttempts</td>
                     <td><partial name="_Time" model="@((DateTime?)job.CreatedAt)" /></td>
                     <td><partial name="_Time" model="@job.CompletedAt" /></td>
-                    <td class="cell-actions"><a class="button button-quiet" href="@Url.Content("~" + Routes.Job(job.Id))">Details<span class="visually-hidden"> of this job</span></a></td>
+                    <td class="cell-actions"><a class="button button-quiet" href="@Url.Content("~" + Routes.Job(job.Id))">Open<span class="visually-hidden"> this job</span></a></td>
                 </tr>
             }
         </tbody>

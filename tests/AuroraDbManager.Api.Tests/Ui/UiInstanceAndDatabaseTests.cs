@@ -148,7 +148,7 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         var details = Flat(await viewer.GetHtmlAsync($"/instances/{instanceId}"));
 
         Assert.Contains($"<a href=\"/instances/{instanceId}\">production-db</a>", list, StringComparison.Ordinal);
-        Assert.Contains("1 core · 1 GB · 20 GB disk", list, StringComparison.Ordinal);
+        Assert.Contains("1 core · 1 GB memory · 20 GB storage", list, StringComparison.Ordinal);
         Assert.Contains($"href=\"/instances/{instanceId}/databases\"", list, StringComparison.Ordinal);
         Assert.DoesNotContain("/delete", list, StringComparison.Ordinal);
         Assert.DoesNotContain("/create", list, StringComparison.Ordinal);
@@ -685,7 +685,7 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var html = await HtmlOf(response);
         Assert.Contains("<h1>Create database</h1>", html, StringComparison.Ordinal);
-        Assert.Contains($"<span class=\"field-error field-validation-error\" data-valmsg-for=\"Input.Name\" data-valmsg-replace=\"true\">{message}</span>", html, StringComparison.Ordinal);
+        Assert.Contains($"<span class=\"field-error field-validation-error\" data-valmsg-for=\"Input.Name\" data-valmsg-replace=\"true\" id=\"Input_Name-error\">{message}</span>", html, StringComparison.Ordinal);
         Assert.Contains("input-validation-error", html, StringComparison.Ordinal);
         Assert.Contains($"value=\"{Encoded(name)}\"", html, StringComparison.Ordinal);
         Assert.Equal(0, await DatabaseCountAsync());

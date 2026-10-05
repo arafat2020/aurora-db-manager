@@ -390,6 +390,38 @@ See [ui.md](ui.md#backup-schedules).
 
 ---
 
+# ✨ Phase 16 — Production UI Polish
+
+## Objectives
+
+* Make the existing UI consistent, responsive and accessible, without adding features
+
+## Tasks
+
+* [x] Audit of every page at 1280, 768 and 390 px, in light and dark
+* [x] Tables shown a row at a time on narrow screens, with nothing left out; no sideways scrolling at desktop width
+* [x] Refused form fields marked invalid and tied to their messages
+* [x] Text contrast of at least 4.5:1 in both themes
+* [x] One vocabulary across the pages: instance, database server, this host, Aurora
+* [x] Tests of structure, form semantics, wording and role visibility across every page
+
+## Output
+
+* The same application, finished: no new routes, no backend, API, schema or deployment changes
+
+## Noted for later, not built
+
+* Per-database users and a way to hand out or rotate an instance's password
+* Retrying and cancelling jobs; deleting and downloading backups
+* Health of a single database and a health status for the scheduler
+* Names instead of ids where the jobs list is filtered by instance or database
+* Right-aligned numeric columns and sortable tables
+* Live updates for long-running work
+
+See [ui.md](ui.md).
+
+---
+
 # 🚫 What NOT to Build (Yet)
 
 Avoid these early:

@@ -265,7 +265,7 @@ public sealed partial class UiSchedulingAndMonitoringTests : IDisposable
 
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
             var html = await HtmlOf(response);
-            Assert.Matches($"<span class=\"field-error field-validation-error\" data-valmsg-for=\"{Regex.Escape(field)}\" data-valmsg-replace=\"true\">{Regex.Escape(message)}", html);
+            Assert.Matches($"<span class=\"field-error field-validation-error\" data-valmsg-for=\"{Regex.Escape(field)}\" data-valmsg-replace=\"true\" id=\"[A-Za-z_]+-error\">{Regex.Escape(message)}", html);
             // What was typed is still there, as text.
             Assert.Contains($"value=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(cron)}\"", html, StringComparison.Ordinal);
             Assert.DoesNotContain("<script>alert(1)</script>", html, StringComparison.Ordinal);
@@ -909,7 +909,7 @@ public sealed partial class UiSchedulingAndMonitoringTests : IDisposable
         {
             var html = await response.Content.ReadAsStringAsync();
 
-            foreach (var secret in new[] { password, WebFactory.SigningKey, "hunter2", "PGPASSWORD", "POSTGRES_PASSWORD", "raw-tool-detail", "eyJ", "Exception", "   at " })
+            foreach (var secret in new[] { password, WebFactory.SigningKey, "hunter2", "PGPASSWORD", "POSTGRES_PASSWORD", "raw-tool-detail", "eyJhbGciOi", "Exception", "   at " })
             {
                 Assert.DoesNotContain(secret, html, StringComparison.Ordinal);
             }

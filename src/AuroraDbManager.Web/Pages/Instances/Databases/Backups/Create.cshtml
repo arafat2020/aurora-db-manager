@@ -39,7 +39,7 @@ else if (instance.Status != InstanceStatus.Running || database.Status != Databas
             <dt>Storage</dt>
             <dd>
                 <strong>@Labels.For(Model.Storage)</strong>
-                <span class="muted">@Labels.Describe(Model.Storage) Set by this server's configuration.</span>
+                <span class="muted">@Labels.Describe(Model.Storage) Set by Aurora's configuration.</span>
             </dd>
         </dl>
         <p class="field-hint">The backup is made in the background and is listed as pending, then running, until it is complete. The database stays available meanwhile. A finished backup is read back from the storage and checked against its checksum before it is marked completed.</p>

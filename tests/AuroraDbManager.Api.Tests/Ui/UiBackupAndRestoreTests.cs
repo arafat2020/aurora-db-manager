@@ -297,7 +297,7 @@ public sealed partial class UiBackupAndRestoreTests : IDisposable
         Assert.Contains("<dt>Database</dt> <dd class=\"mono\">orders</dd>", form, StringComparison.Ordinal);
         Assert.Contains("<dt>Engine</dt> <dd>PostgreSQL 16</dd>", form, StringComparison.Ordinal);
         // Where it will go is the server's to say, and is said, not asked.
-        Assert.Contains("<dt>Storage</dt> <dd> <strong>Local</strong> <span class=\"muted\">A directory on the server Aurora runs on. Set by this server&#x27;s configuration.</span>", form.Replace("server's", "server&#x27;s", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.Contains("<dt>Storage</dt> <dd> <strong>Local</strong> <span class=\"muted\">A directory on the server Aurora runs on. Set by Aurora&#x27;s configuration.</span>", form.Replace("Aurora's", "Aurora&#x27;s", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.DoesNotContain("<select", form, StringComparison.Ordinal);
         Assert.DoesNotContain("type=\"radio\"", form, StringComparison.Ordinal);
         Assert.Contains("data-busy-label=\"Starting…\">Create backup</button>", form, StringComparison.Ordinal);
@@ -425,7 +425,7 @@ public sealed partial class UiBackupAndRestoreTests : IDisposable
         Assert.Matches("<dt>Created</dt> <dd> <time datetime=\"[^\"]+\">[^<]+ UTC</time> </dd> <dt>Completed</dt> <dd> <time datetime=\"[^\"]+\">", html);
         Assert.Contains($"<span>{record.SizeBytes} B</span> <span class=\"muted\">{record.SizeBytes} bytes</span>", html, StringComparison.Ordinal);
         Assert.Contains("<dt>Storage</dt> <dd> <strong>Local</strong> <span class=\"muted\">A directory on the server Aurora runs on.</span> </dd>", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Not configured on this server", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Not configured in Aurora", html, StringComparison.Ordinal);
         // Integrity is the record's: the checksum that was verified when the backup was stored.
         Assert.Matches("<dt>Integrity</dt> <dd> <span class=\"badge badge-success\"><svg.*?</svg> Verified</span>", html);
         Assert.Contains("The stored backup was read back and matched its checksum before it was marked completed.", html, StringComparison.Ordinal);
@@ -641,8 +641,8 @@ public sealed partial class UiBackupAndRestoreTests : IDisposable
         var response = await op.PostFormAsync(target.Restore(inS3), []);
 
         Assert.Contains("<strong>S3</strong>", details, StringComparison.Ordinal);
-        Assert.Matches("<span class=\"badge badge-warning\"><svg.*?</svg> Not configured on this server</span>", details);
-        Assert.Contains("The backup cannot be read, and so not restored, until this server has settings for that storage again.", details, StringComparison.Ordinal);
+        Assert.Matches("<span class=\"badge badge-warning\"><svg.*?</svg> Not configured in Aurora</span>", details);
+        Assert.Contains("The backup cannot be read, and so not restored, until Aurora has settings for that storage again.", details, StringComparison.Ordinal);
         Assert.DoesNotContain($"href=\"{target.Restore(inS3)}\"", details, StringComparison.Ordinal);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var html = await HtmlOf(response);

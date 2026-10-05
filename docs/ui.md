@@ -229,13 +229,26 @@ states. It is not served outside development.
 - **Status** is never colour alone. `StatusBadge.For(…)` maps each of the application's statuses
   to a word and one of five tones (success, progress, neutral, warning, danger); each tone has
   its own mark as well as its own colour.
-- **Tables** are plain HTML tables with `class="table"` inside a `table-wrap`, which scrolls
-  sideways on a narrow screen. Give each a `<caption>` and `scope="col"` headers. Lists show one
-  page from the service; paging controls come with the feature phases.
+- **Tables** are plain HTML tables with `class="table"` inside a `table-wrap`. Give each a
+  `<caption>` and `scope="col"` headers, mark the cell that names the row `cell-primary` and the
+  cell with its actions `cell-actions`. A cell may wrap onto a second line; a badge and a button
+  never break. On a narrow screen every table is shown a row at a time, each value next
+  to the name of its column, with nothing left out: the script copies the column names to the
+  cells and states the table's roles, and the stylesheet stacks the rows. Without script a table
+  stays a table and scrolls inside its frame.
 - **Forms** post back to their page. Give every input a `<label>`, hints through
   `aria-describedby`, and errors next to the field with `asp-validation-for`. Validation is the
   server's: the page model's attributes for shape, the application service for everything else.
-  Client-side attributes such as `required` are a convenience only.
+  Client-side attributes such as `required` are a convenience only. A field the server refused
+  is marked `aria-invalid` and described by its message, after its hint; two tag helpers in
+  `Components/ValidationAccessibilityTagHelpers.cs` do that for every `asp-for` control, so a
+  form needs nothing extra. The primary button comes first and *Cancel* after it; on a page that
+  asks before something irreversible, *Cancel* comes first and the button that does it is the
+  only solid red one.
+- **Words.** One word for one thing: an *instance* is what Aurora manages, its *database server*
+  is the process in it, *this host* is the machine Docker runs on, and *Aurora* is the
+  application and its configuration. Actions are *Create …*, *Edit …*, *Delete …*; going to a
+  row's page is *Open*. Every instant is written `2026-10-05 18:00 UTC`.
 - **Changes are `POST`s with an antiforgery token.** Razor Pages validates the token on every
   `POST` by default and the form tag helper adds it; this is not turned off anywhere. Never
   change state in a `GET`.
@@ -370,7 +383,7 @@ An instance's page and each database's page have a **Connection** section. It is
   network connects to), the engine's port, and the user name.
 - **From outside the Docker network**: *External access: Disabled* for every instance until an
   administrator enables it; then the host, the host port, the address the port is bound to with
-  what that means (*this server only*, *one network interface*, *every network interface*), the
+  what that means (*this host only*, *one network interface*, *every network interface*), the
   protocol and the user name.
 - On a database's page, in addition, the database name and **connection string templates**, such
   as `postgresql://postgres:<password>@127.0.0.1:15432/app`. The password is a placeholder.
@@ -697,8 +710,12 @@ here, and a UI with no build step is one less thing to break. There is no compon
 no web font; the UI uses the system font.
 
 - Light and dark follow the operating system (`prefers-color-scheme`).
-- Desktop first. Below about 830 px the sidebar becomes a panel behind a menu button, tables
-  scroll sideways, and cards stack.
+- Desktop first, and usable down to a 390 px phone. Below about 830 px the sidebar becomes a
+  panel behind a menu button, tables are shown a row at a time, definition lists put each term
+  above its value, and filters and cards stack. No page scrolls sideways at any width.
+- Colours are tokens, defined once for light and once for dark; no rule names a colour itself,
+  and a test fails if the dark theme lacks a colour the light one has. Text meets a 4.5:1
+  contrast ratio in both.
 - No inline styles and no inline scripts, anywhere: the content security policy forbids them, and
   a test checks every page.
 - Animation is one spinner, and it stops for users who prefer reduced motion.
@@ -708,8 +725,9 @@ no web font; the UI uses the system font.
 `wwwroot/js/aurora.js` is progressive enhancement, well under two hundred lines: the menu button
 on small screens, closing the account menu, marking a submitted form as busy so it cannot be sent
 twice, the confirmation dialog, reloading a page that shows work in progress (see
-[Work that takes a while](#work-that-takes-a-while)), and the *Copy* buttons of the Connection
-sections, which write text that is already on the page to the clipboard. It stores nothing, makes no request of its
+[Work that takes a while](#work-that-takes-a-while)), the *Copy* buttons of the Connection
+sections, which write text that is already on the page to the clipboard, and naming the columns
+at the cells of tables so that they can be stacked on narrow screens. It stores nothing, makes no request of its
 own, and nothing depends on it. A later phase may add live updates (SignalR) for job and instance
 status; nothing has been prepared for that yet, on purpose.
 

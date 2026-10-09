@@ -70,6 +70,11 @@ public sealed class RestoreService(
             return new CreateRestoreResult(busy);
         }
 
+        if (await db.CredentialRotationUnfinishedAsync(database.InstanceId, cancellationToken))
+        {
+            return new CreateRestoreResult(CreateRestoreStatus.CredentialRotationInProgress);
+        }
+
         var job = Job.Create(
             JobType.RestoreDatabase,
             database.InstanceId,
@@ -157,5 +162,7 @@ public enum CreateRestoreStatus
     RestoreInProgress,
 
     /// <summary>Not accepted because the database is being backed up.</summary>
-    BackupInProgress
+    BackupInProgress,
+    /// <summary>Not accepted because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress
 }

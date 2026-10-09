@@ -1,5 +1,6 @@
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Connectivity;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Errors;
 using Microsoft.AspNetCore.Authorization;
@@ -47,6 +48,8 @@ public sealed class DatabasesController(DatabaseService databases, InstanceConne
             CreateDatabaseStatus.AlreadyExists => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.DatabaseAlreadyExists,
                 "The instance already has a database with this name.")),
+            CreateDatabaseStatus.CredentialRotationInProgress => Conflict(ApiErrorResponse.Create(
+                ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage)),
             _ => InstanceNotFound()
         };
     }
@@ -130,6 +133,8 @@ public sealed class DatabasesController(DatabaseService databases, InstanceConne
             DeleteDatabaseStatus.RestoreInProgress => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.RestoreOperationInProgress,
                 "Database cannot be deleted while it is being restored.")),
+            DeleteDatabaseStatus.CredentialRotationInProgress => Conflict(ApiErrorResponse.Create(
+                ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage)),
             _ => DatabaseNotFound()
         };
     }

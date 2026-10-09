@@ -19,12 +19,12 @@ public sealed class ListJobsQuery
 
     /// <summary>
     /// Only jobs of this type: <c>provision_instance</c>, <c>create_database</c>, <c>delete_database</c>,
-    /// <c>backup_database</c> or <c>restore_database</c>.
+    /// <c>backup_database</c>, <c>restore_database</c> or <c>rotate_credential</c>.
     /// </summary>
     [FromQuery(Name = "type")]
     [AllowedValues(
-        "provision_instance", "create_database", "delete_database", "backup_database", "restore_database", null,
-        ErrorMessage = "type must be one of: provision_instance, create_database, delete_database, backup_database, restore_database.")]
+        "provision_instance", "create_database", "delete_database", "backup_database", "restore_database", "rotate_credential", null,
+        ErrorMessage = "type must be one of: provision_instance, create_database, delete_database, backup_database, restore_database, rotate_credential.")]
     public string? Type { get; init; }
 
     /// <summary>Only jobs of this instance.</summary>

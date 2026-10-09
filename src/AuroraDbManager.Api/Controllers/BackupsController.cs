@@ -1,5 +1,6 @@
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Errors;
 using Microsoft.AspNetCore.Authorization;
@@ -55,6 +56,8 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
             CreateBackupStatus.RestoreInProgress => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.RestoreOperationInProgress,
                 "The database cannot be backed up while it is being restored.")),
+            CreateBackupStatus.CredentialRotationInProgress => Conflict(ApiErrorResponse.Create(
+                ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage)),
             _ => DatabaseNotFound()
         };
     }
@@ -134,6 +137,8 @@ public sealed class BackupsController(BackupService backups, RestoreService rest
             CreateRestoreStatus.BackupInProgress => Conflict(ApiErrorResponse.Create(
                 ErrorCodes.BackupOperationInProgress,
                 "The database cannot be restored while it is being backed up.")),
+            CreateRestoreStatus.CredentialRotationInProgress => Conflict(ApiErrorResponse.Create(
+                ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage)),
             _ => NotFound(ApiErrorResponse.Create(ErrorCodes.BackupNotFound, "Backup was not found."))
         };
     }

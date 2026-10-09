@@ -1,6 +1,7 @@
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Connectivity;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Restores;
@@ -30,6 +31,8 @@ public static class Rejections
             ErrorCodes.BackupOperationInProgress, "Instance cannot be deleted while one of its databases is being backed up."),
         DeleteInstanceResult.RestoreInProgress => Conflict(
             ErrorCodes.RestoreOperationInProgress, "Instance cannot be deleted while one of its databases is being restored."),
+        DeleteInstanceResult.CredentialRotationInProgress => Conflict(
+            ErrorCodes.CredentialRotationInProgress, "Instance cannot be deleted while its database password is being rotated."),
         _ => null
     };
 
@@ -38,6 +41,7 @@ public static class Rejections
         CreateDatabaseStatus.InstanceNotReady => InstanceNotReady,
         CreateDatabaseStatus.AlreadyExists => Conflict(
             ErrorCodes.DatabaseAlreadyExists, "The instance already has a database with this name."),
+        CreateDatabaseStatus.CredentialRotationInProgress => Conflict(ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage),
         _ => null
     };
 
@@ -51,6 +55,7 @@ public static class Rejections
             ErrorCodes.BackupOperationInProgress, "Database cannot be deleted while a backup of it is in progress."),
         DeleteDatabaseStatus.RestoreInProgress => Conflict(
             ErrorCodes.RestoreOperationInProgress, "Database cannot be deleted while it is being restored."),
+        DeleteDatabaseStatus.CredentialRotationInProgress => Conflict(ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage),
         _ => null
     };
 
@@ -62,6 +67,7 @@ public static class Rejections
             ErrorCodes.BackupOperationInProgress, "The database already has a backup in progress."),
         CreateBackupStatus.RestoreInProgress => Conflict(
             ErrorCodes.RestoreOperationInProgress, "The database cannot be backed up while it is being restored."),
+        CreateBackupStatus.CredentialRotationInProgress => Conflict(ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage),
         _ => null
     };
 
@@ -76,6 +82,7 @@ public static class Rejections
             ErrorCodes.RestoreOperationInProgress, "The database is already being restored."),
         CreateRestoreStatus.BackupInProgress => Conflict(
             ErrorCodes.BackupOperationInProgress, "The database cannot be restored while it is being backed up."),
+        CreateRestoreStatus.CredentialRotationInProgress => Conflict(ErrorCodes.CredentialRotationInProgress, CredentialRotationErrors.InProgressMessage),
         _ => null
     };
 
@@ -111,6 +118,20 @@ public static class Rejections
     {
         var (status, code, message) = ExternalAccessErrors.For(result);
         return new Rejection(status, code, message);
+    }
+
+    /// <summary>The password was not queued for rotation. The status, code and sentence are the ones the API answers with.</summary>
+    public static Rejection For(RotateCredentialStatus status)
+    {
+        var (httpStatus, code, message) = CredentialRotationErrors.For(status);
+        return new Rejection(httpStatus, code, message);
+    }
+
+    /// <summary>The new password was not handed out. The status, code and sentence are the ones the API answers with.</summary>
+    public static Rejection For(RetrieveCredentialStatus status)
+    {
+        var (httpStatus, code, message) = CredentialRotationErrors.For(status);
+        return new Rejection(httpStatus, code, message);
     }
 
     /// <summary>The instance's resources could not be removed; nothing was deleted. The exception's code and message are written for clients.</summary>

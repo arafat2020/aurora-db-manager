@@ -20,8 +20,6 @@ public sealed class MySqlDatabaseManager(
     Func<string, DbConnection>? connectionFactory = null)
     : SqlDatabaseManager(endpoints, secrets, options, logger)
 {
-    private const string AdminUser = "root";
-
     private static readonly MySqlCommandBuilder Quoting = new();
 
     public override InstanceEngine Engine => InstanceEngine.Mysql;
@@ -56,4 +54,49 @@ public sealed class MySqlDatabaseManager(
     // A connect timeout is reported as "unable to connect" wrapping the timeout that caused it.
     protected override bool IsTimeout(Exception exception) =>
         WrapsTimeout(exception, wrapped => wrapped is MySqlException { ErrorCode: MySqlErrorCode.CommandTimeoutExpired });
+
+    protected override bool IsAuthenticationFailure(Exception exception) =>
+        exception is MySqlException { ErrorCode: MySqlErrorCode.AccessDenied };
+
+    /// <remarks>
+    /// The image creates the administrator once per host it may connect from, <c>root@localhost</c>
+    /// and <c>root@%</c>, with the same password. All of them are changed, in one statement, which
+    /// MySQL 8 carries out for all or for none: no account is left behind with the old password.
+    /// The password is a parameter of the command; the hosts are read from the server and written
+    /// as string literals by the driver's own escaping.
+    /// </remarks>
+    protected override async Task ChangeAdminPasswordAsync(DbConnection connection, string newPassword, CancellationToken cancellationToken)
+    {
+        var hosts = new List<string>();
+        await using (var accounts = connection.CreateCommand())
+        {
+            accounts.CommandText = "SELECT Host FROM mysql.user WHERE User = @user ORDER BY Host";
+            AddParameter(accounts, "user", AdminUser);
+            await using var reader = await accounts.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                hosts.Add(reader.GetString(0));
+            }
+        }
+
+        if (hosts.Count == 0)
+        {
+            throw new InvalidOperationException("The server has no administrator account.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "ALTER USER " + string.Join(
+            ", ",
+            hosts.Select(host => $"'{MySqlHelper.EscapeString(AdminUser)}'@'{MySqlHelper.EscapeString(host)}' IDENTIFIED BY @password"));
+        AddParameter(command, "password", newPassword);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void AddParameter(DbCommand command, string name, string value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
 }

@@ -16,6 +16,11 @@ public sealed class InstanceSecretConfiguration : IEntityTypeConfiguration<Insta
         builder.Property(s => s.InstanceId).HasColumnName("instance_id").ValueGeneratedNever();
         builder.Property(s => s.ProtectedAdminPassword).HasColumnName("protected_admin_password")
             .HasMaxLength(1024).IsRequired();
+        builder.Property(s => s.ProtectedPendingAdminPassword).HasColumnName("protected_pending_admin_password")
+            .HasMaxLength(1024);
+        builder.Property(s => s.DeliveryJobId).HasColumnName("delivery_job_id");
+        builder.Property(s => s.DeliveryExpiresAt).HasColumnName("delivery_expires_at");
+        builder.Property(s => s.DeliveryConsumedAt).HasColumnName("delivery_consumed_at");
         builder.Property(s => s.CreatedAt).HasColumnName("created_at");
 
         // Deleting an instance removes its secrets.

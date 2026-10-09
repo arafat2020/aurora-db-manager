@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AuroraDbManager.Api.Application.Backups;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Domain.Backups;
@@ -24,6 +25,12 @@ public static class Offered
     /// <summary>Turning external access on or off restarts the server, so there has to be one that is running.</summary>
     public static bool ChangeExternalAccess(ClaimsPrincipal user, InstanceResponse instance) =>
         user.IsAdmin() && instance.Status == InstanceStatus.Running;
+
+    /// <summary>The password is changed in the server, so there has to be one that is running, and nobody changing it already.</summary>
+    public static bool RotatePassword(ClaimsPrincipal user, InstanceResponse instance, InstanceCredentialResponse credential) =>
+        user.IsOperator()
+        && instance.Status == InstanceStatus.Running
+        && credential is { Managed: true, Rotation: not CredentialRotationState.InProgress };
 
     public static bool CreateDatabase(ClaimsPrincipal user, InstanceResponse instance) =>
         user.IsOperator() && instance.Status == InstanceStatus.Running;

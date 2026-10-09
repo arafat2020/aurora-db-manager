@@ -66,6 +66,13 @@ public sealed class AuthorizationTests : IDisposable
         { "GET", $"/api/v1/instances/{Id}/connection", "viewer" },
         { "GET", $"/api/v1/databases/{Id}/connection", "viewer" },
 
+        // The credential Aurora manages for an instance: anyone's to look at, since there is no
+        // password in it; rotating the password is an operator's.
+        { "GET", $"/api/v1/instances/{Id}/credentials", "viewer" },
+        { "POST", $"/api/v1/instances/{Id}/credentials/rotate", "operator" },
+        // The one response with a password in it: for those who may rotate, and nobody else.
+        { "POST", $"/api/v1/instances/{Id}/credentials/rotate/{Id}/result", "operator" },
+
         // Databases.
         { "POST", $"/api/v1/instances/{Id}/databases", "operator" },
         { "DELETE", $"/api/v1/databases/{Id}", "operator" },

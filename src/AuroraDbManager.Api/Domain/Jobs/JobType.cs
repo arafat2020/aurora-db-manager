@@ -7,5 +7,8 @@ public enum JobType
     CreateDatabase,
     DeleteDatabase,
     BackupDatabase,
-    RestoreDatabase
+    RestoreDatabase,
+
+    /// <summary>Replaces the password of an instance's database administrator.</summary>
+    RotateCredential
 }

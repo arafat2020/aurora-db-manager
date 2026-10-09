@@ -911,9 +911,10 @@ public sealed partial class UiInstanceAndDatabaseTests : IDisposable
         foreach (var html in pages)
         {
             Assert.DoesNotContain(password, html, StringComparison.Ordinal);
-            // The Connection section says where the password goes and that it is not shown; nothing
-            // else on a page has reason to mention one, and nothing anywhere holds one.
-            var outsideConnection = Regex.Replace(html, "<section class=\"section\" aria-labelledby=\"connection-title\">.*?</section>", string.Empty, RegexOptions.Singleline);
+            // The Connection section says where the password goes and that it is not shown, and
+            // the Credential section that Aurora keeps it and can rotate it; nothing else on a
+            // page has reason to mention one, and nothing anywhere holds one.
+            var outsideConnection = Regex.Replace(html, "<section class=\"section\" aria-labelledby=\"(connection|credential)-title\">.*?</section>", string.Empty, RegexOptions.Singleline);
             foreach (var word in new[] { "password", "secret", "connection string", "POSTGRES_PASSWORD" })
             {
                 Assert.DoesNotContain(word, outsideConnection, StringComparison.OrdinalIgnoreCase);

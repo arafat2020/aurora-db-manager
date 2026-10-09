@@ -47,6 +47,11 @@ public sealed class DatabaseService(
             return new CreateDatabaseResult(CreateDatabaseStatus.AlreadyExists);
         }
 
+        if (await db.CredentialRotationUnfinishedAsync(instanceId, cancellationToken))
+        {
+            return new CreateDatabaseResult(CreateDatabaseStatus.CredentialRotationInProgress);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var database = Database.Create(instanceId, name, now);
         var job = Job.Create(JobType.CreateDatabase, instanceId, jobOptions.Value.MaxAttempts, now, database.Id);
@@ -149,6 +154,11 @@ public sealed class DatabaseService(
             return new DeleteDatabaseResult(busy);
         }
 
+        if (await db.CredentialRotationUnfinishedAsync(database.InstanceId, cancellationToken))
+        {
+            return new DeleteDatabaseResult(DeleteDatabaseStatus.CredentialRotationInProgress);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         database.MarkDeleting(now);
         var job = Job.Create(JobType.DeleteDatabase, database.InstanceId, jobOptions.Value.MaxAttempts, now, database.Id);
@@ -243,7 +253,9 @@ public enum CreateDatabaseStatus
     InstanceNotReady,
 
     /// <summary>Not accepted because the instance already has a database with this name.</summary>
-    AlreadyExists
+    AlreadyExists,
+    /// <summary>Not accepted because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress
 }
 
 /// <param name="Status">Whether the deletion was accepted, and if not, why.</param>
@@ -271,5 +283,7 @@ public enum DeleteDatabaseStatus
     BackupInProgress,
 
     /// <summary>Not accepted because the database is being restored.</summary>
-    RestoreInProgress
+    RestoreInProgress,
+    /// <summary>Not accepted because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress
 }

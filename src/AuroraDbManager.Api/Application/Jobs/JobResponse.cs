@@ -4,13 +4,13 @@ using AuroraDbManager.Api.Domain.Jobs;
 namespace AuroraDbManager.Api.Application.Jobs;
 
 /// <param name="Id">Unique identifier of the job.</param>
-/// <param name="Type">Kind of work: <c>provision_instance</c>, <c>create_database</c>, <c>delete_database</c>, <c>backup_database</c> or <c>restore_database</c>.</param>
+/// <param name="Type">Kind of work: <c>provision_instance</c>, <c>create_database</c>, <c>delete_database</c>, <c>backup_database</c>, <c>restore_database</c> or <c>rotate_credential</c>.</param>
 /// <param name="Status">
 /// Lifecycle status: <c>pending</c>, <c>running</c>, <c>completed</c> or <c>failed</c>. A job stays
 /// <c>running</c> while it retries; <c>failed</c> means all attempts were used.
 /// </param>
 /// <param name="InstanceId">Instance the job works on.</param>
-/// <param name="DatabaseId">Database the job works on. Present on every job except <c>provision_instance</c>.</param>
+/// <param name="DatabaseId">Database the job works on. Present on every job except <c>provision_instance</c> and <c>rotate_credential</c>.</param>
 /// <param name="BackupId">Backup a <c>backup_database</c> job produces or a <c>restore_database</c> job restores from. Only present on those jobs.</param>
 /// <param name="Attempt">Number of the current attempt; 0 until first picked up. An attempt interrupted by a restart is not counted.</param>
 /// <param name="MaxAttempts">Attempts allowed before the job is marked failed.</param>

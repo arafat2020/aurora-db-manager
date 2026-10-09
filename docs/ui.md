@@ -283,9 +283,11 @@ Razor Page  ──►  InstanceService / DatabaseService / InstanceHealthService
 | --- | --- | --- |
 | `/instances` | The instances, 20 to a page (`?page=2`) | `InstanceService.ListAsync` |
 | `/instances/create` | The form that creates one | `InstanceService.CreateAsync` |
-| `/instances/{id}` | One instance: overview, health, connection, its databases, recent operations | `InstanceService.GetAsync`, `InstanceHealthService.GetAsync`, `InstanceConnectivityService.GetAsync`, `DatabaseService.ListAsync`, `JobService.ListAsync` |
+| `/instances/{id}` | One instance: overview, health, connection, credential, its databases, recent operations | `InstanceService.GetAsync`, `InstanceHealthService.GetAsync`, `InstanceConnectivityService.GetAsync`, `CredentialRotationService.GetAsync`, `DatabaseService.ListAsync`, `JobService.ListAsync` |
 | `/instances/{id}/delete` | The question, and the form that deletes | `InstanceService.DeleteAsync` |
 | `/instances/{id}/external-access` | The question, and the forms that enable and disable external access | `InstanceConnectivityService.EnableAsync`, `DisableAsync` |
+| `/instances/{id}/rotate-password` | The question, and the form that starts a rotation of the administrator password | `CredentialRotationService.RequestAsync` |
+| `/instances/{id}/rotate-password/{jobId}/result` | The new password of a completed rotation, once, in the answer to a `POST` | `CredentialRotationService.RetrieveResultAsync` |
 | `/instances/{id}/databases` | The instance's databases, 20 to a page | `DatabaseService.ListAsync` |
 | `/instances/{id}/databases/create` | The form that creates one | `DatabaseService.CreateAsync` |
 | `/instances/{id}/databases/{databaseId}` | One database: overview, connection, recent operations | `DatabaseService.GetAsync`, `InstanceConnectivityService.GetForDatabaseAsync`, `JobService.ListAsync` |
@@ -302,7 +304,9 @@ so they are reached through *Instances*.
 | | viewer | operator | admin |
 | --- | :---: | :---: | :---: |
 | See instances, their details, health and databases | ✔ | ✔ | ✔ |
+| See the managed credential: its username and when it was last rotated | ✔ | ✔ | ✔ |
 | Create and delete a database | | ✔ | ✔ |
+| Rotate the administrator password, and see the new one once | | ✔ | ✔ |
 | Create and delete an instance | | | ✔ |
 | Enable and disable external access | | | ✔ |
 
@@ -420,10 +424,100 @@ and sentence and the API's status (`409` or `503`), nothing was changed, and no 
 
 ### Credentials
 
-No page shows, embeds or logs a credential. The administrator password of an instance stays in
-the secret store, as it does for the API; the pages never ask for it. Connection strings on the
-pages are templates with `<password>` in place of the password, and the only hidden field of any
-form is the antiforgery token.
+With one exception, no page shows, embeds or logs a credential. The administrator password of
+an instance stays in the secret store, as it does for the API; the pages never ask for it. The
+exception is the page that shows the new password of a completed rotation, once
+([The new password, once](#the-new-password-once)). Connection strings on the
+pages are templates with `<password>` in place of the password, and the only hidden fields of
+any form are the antiforgery token and, on the jobs list, the id it is narrowed to.
+
+### The managed credential
+
+Every instance has one credential that Aurora manages: the engine's administrator account,
+`postgres` for PostgreSQL and `root` for MySQL, with a password Aurora generated when the
+instance was created. Aurora itself connects with it to create and delete databases, to back
+them up and to restore them. An instance page has a *Credential* section that says so:
+
+- **Credential**: *Managed by Aurora*, or *Not yet* while the instance is being provisioned.
+- **Username**: the account.
+- **Password**: *Not displayed*. It cannot be chosen, and this page never shows it. It is shown
+  once, right after a rotation, from that rotation's job.
+- **Last rotated**: when, or *Never*.
+- **Last rotation**: the status of the most recent rotation and a link to its job.
+
+### Rotating the password
+
+Operators and administrators see *Rotate password* in that section while the instance is
+running and no rotation is under way. It leads to `/instances/{id}/rotate-password`, a page
+that asks before anything happens and says what will:
+
+- Aurora generates a new password; nobody types one, and the form has no field for one;
+- **the current password stops working** once the rotation has succeeded, so anything outside
+  Aurora that connects as the administrator with it can no longer connect;
+- **the new password is shown once**, on request, after the rotation has succeeded, to an
+  operator or an administrator, for a limited time; Aurora stores it encrypted and uses it;
+- connections that are open stay open, the database server is not restarted, and no data is touched.
+
+Only its form changes anything: a `POST` with an antiforgery token. It starts a
+`rotate_credential` job and leads to that job's page, which says *The password is being
+rotated*, reloads while the job runs, and ends with *The password was rotated* or, if the job
+failed, *The password was not rotated* with the job's stable error code and message.
+
+If the service refuses (the instance is not running, a rotation is already under way, or one of
+the instance's databases is being created, deleted, backed up or restored) the page comes back
+with the code and sentence the API uses and status `409`, and nothing was started. The reverse
+holds too: while a rotation is unfinished, creating and deleting databases, backups, restores,
+changing external access and deleting the instance are refused with
+`CREDENTIAL_ROTATION_IN_PROGRESS`. A scheduled backup that falls due in those seconds is
+skipped, like one that finds its database busy.
+
+### The new password, once
+
+A password that nobody outside Aurora can learn is of no use to a client outside Aurora, so a
+completed rotation hands its new password out: **once**.
+
+- The job page of a completed rotation has a *New password* section. To an operator or an
+  administrator it offers *Show the new password*; a viewer is told that it is available and is
+  offered nothing. The job page itself never contains the password.
+- The button sends a `POST` with an antiforgery token to
+  `/instances/{id}/rotate-password/{jobId}/result`. The answer is a page with the username, the
+  password, and *Copy password*, under the heading *This password will only be shown once*. It
+  is sent with `Cache-Control: no-store`. The password is in the page's text and nowhere else:
+  not in the address, a redirect, a cookie, a field or a script, and nothing is put in the
+  browser's storage. *Copy password* copies when it is pressed and never by itself.
+- That was the one time. Reloading the page sends the form again and is answered *Credential
+  already retrieved. It cannot be displayed again.* with status `409`; opening the address leads
+  back to the job, which says the same and no longer offers the button.
+- **Any** operator or administrator can ask, not only the one who started the rotation, so a
+  colleague can pick it up; but whoever asks first is the only one who sees it.
+- It can be asked for during 15 minutes after the rotation completed
+  (`Credentials:ResultTtlMinutes`). After that the job page says the time has passed. The
+  password itself keeps working for Aurora; to get one that can be used, rotate again.
+- Asking for another rotation withdraws an older password that nobody retrieved: it is about to
+  stop working.
+- A rotation that failed has nothing to show.
+
+If something goes wrong inside Aurora while the password is being fetched, the request fails and
+the one time is **not** used up: recording that it was shown and reading it are one transaction.
+What cannot be undone is a page that was sent and never arrived, or was closed unread; then the
+password is rotated again.
+
+**When a rotation fails part-way.** The database server and Aurora's secret store cannot be
+changed in one step, so Aurora stores the new password, encrypted, *before* it tells the server
+about it, and keeps it until the server is known to accept it and it has become the password
+Aurora uses. A job that is interrupted or fails therefore never loses track of what the server
+may have been changed to. The instance page then says *The last password rotation did not
+finish*; rotating again finishes that rotation with the same password instead of starting
+another. Until then Aurora's own work in that instance may fail to connect, which is the reason
+to do it. The one state Aurora cannot repair is a server that accepts neither password, which
+means its administrator password was changed by someone else: the job fails with
+`CREDENTIAL_ROTATION_RECOVERY_REQUIRED` and changes nothing.
+
+**What does not change.** The container, its environment and its data volume are not touched.
+The password variable in the container's environment (`POSTGRES_PASSWORD`, `MYSQL_ROOT_PASSWORD`)
+is what the engine read once, when it initialized its data directory; after a rotation it holds
+a password that no longer works, and that is expected. Restarting the server or Aurora, or
+reconciling, never puts an old password back.
 
 ## Backups and restores
 

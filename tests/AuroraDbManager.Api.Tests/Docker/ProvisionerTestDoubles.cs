@@ -19,6 +19,68 @@ public sealed class InMemoryInstanceSecretStore : IInstanceSecretStore
 
         return Task.FromResult(password);
     }
+
+    private readonly Dictionary<Guid, string> _replacements = [];
+
+    public Task<AdminCredentialState> GetAdminCredentialStateAsync(Guid instanceId, CancellationToken cancellationToken) =>
+        Task.FromResult(
+            !_passwords.ContainsKey(instanceId) ? AdminCredentialState.None
+            : _replacements.ContainsKey(instanceId) ? AdminCredentialState.ReplacementStaged
+            : AdminCredentialState.Stored);
+
+    public Task<bool> StageAdminPasswordReplacementAsync(Guid instanceId, CancellationToken cancellationToken)
+    {
+        if (!_passwords.ContainsKey(instanceId))
+        {
+            return Task.FromResult(false);
+        }
+
+        if (_replacements.TryAdd(instanceId, $"pw-{Guid.NewGuid():N}"))
+        {
+            _deliveries.Remove(instanceId);
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public Task<string?> GetAdminPasswordReplacementAsync(Guid instanceId, CancellationToken cancellationToken) =>
+        Task.FromResult(_replacements.GetValueOrDefault(instanceId));
+
+    public Task PromoteAdminPasswordReplacementAsync(Guid instanceId, CancellationToken cancellationToken)
+    {
+        if (_replacements.Remove(instanceId, out var replacement))
+        {
+            _passwords[instanceId] = replacement;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private readonly Dictionary<Guid, AdminPasswordDelivery> _deliveries = [];
+
+    public Task OfferAdminPasswordAsync(Guid instanceId, Guid jobId, DateTime expiresAt, CancellationToken cancellationToken)
+    {
+        if (!_deliveries.TryGetValue(instanceId, out var delivery) || delivery.JobId != jobId)
+        {
+            _deliveries[instanceId] = new AdminPasswordDelivery(jobId, expiresAt, null);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<AdminPasswordDelivery?> GetAdminPasswordDeliveryAsync(Guid instanceId, CancellationToken cancellationToken) =>
+        Task.FromResult(_deliveries.GetValueOrDefault(instanceId));
+
+    public Task<string?> ClaimAdminPasswordAsync(Guid instanceId, Guid jobId, DateTime utcNow, CancellationToken cancellationToken)
+    {
+        if (!_deliveries.TryGetValue(instanceId, out var delivery) || delivery.JobId != jobId || delivery.ConsumedAt is not null || delivery.ExpiresAt <= utcNow)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        _deliveries[instanceId] = delivery with { ConsumedAt = utcNow };
+        return Task.FromResult<string?>(_passwords[instanceId]);
+    }
 }
 
 /// <summary>A clock that moves forward by <see cref="Step"/> every time it is read.</summary>

@@ -1,6 +1,8 @@
 @page "/instances/{id:guid}"
 @model AuroraDbManager.Web.Pages.Instances.DetailsModel
+@using AuroraDbManager.Api.Application.Credentials
 @using AuroraDbManager.Api.Domain.Instances
+@using AuroraDbManager.Api.Domain.Jobs
 @{
     var instance = Model.Instance;
     ViewData["Title"] = instance.Name;
@@ -125,6 +127,69 @@ Username: @Model.Connection.Username</pre>
                     <button type="button" class="button" data-copy="#connection-details" hidden>Copy connection details</button>
                 </div>
             }
+        </div>
+    </div>
+</section>
+
+<section class="section" aria-labelledby="credential-title">
+    <div class="section-header">
+        <h2 id="credential-title">Credential</h2>
+        @if (Offered.RotatePassword(User, instance, Model.Credential))
+        {
+            <span class="section-actions">
+                <a class="button" href="@Url.Content("~" + Routes.RotatePassword(instance.Id))">Rotate password</a>
+            </span>
+        }
+    </div>
+    @{ var credential = Model.Credential; }
+    @if (credential.Rotation == CredentialRotationState.Incomplete)
+    {
+        <partial name="_Alert" model="@(new Alert(StatusTone.Warning, User.IsOperator() ? "The last rotation failed before the new password took effect everywhere. Rotate the password again to finish it." : "The last rotation failed before the new password took effect everywhere. An operator or an administrator finishes it by rotating the password again.", "The last password rotation did not finish"))" />
+    }
+    <div class="card">
+        <div class="card-body">
+            <dl class="definition-list">
+                <dt>Credential</dt>
+                <dd>
+                    @if (credential.Managed)
+                    {
+                        <partial name="_StatusBadge" model="@(new StatusBadge("Managed by Aurora", StatusTone.Success))" />
+                        <span class="muted">Aurora-managed database credential: the administrator account Aurora itself connects with.</span>
+                    }
+                    else
+                    {
+                        <partial name="_StatusBadge" model="@(new StatusBadge("Not yet", StatusTone.Neutral))" />
+                        <span class="muted">There is no credential until the instance has been provisioned.</span>
+                    }
+                </dd>
+                <dt>Username</dt>
+                <dd class="mono">@credential.Username</dd>
+                <dt>Password</dt>
+                <dd>Not displayed <span class="muted">Aurora generates it and stores it encrypted. It cannot be chosen, and it is shown only once, right after a rotation.</span></dd>
+                <dt>Last rotated</dt>
+                <dd>
+                    @if (credential.LastRotatedAt is not null)
+                    {
+                        <partial name="_Time" model="@credential.LastRotatedAt" />
+                    }
+                    else
+                    {
+                        <span class="muted">Never. The password is the one the instance was created with.</span>
+                    }
+                </dd>
+                @if (credential.LatestJob is { } rotation)
+                {
+                    <dt>Last rotation</dt>
+                    <dd>
+                        <partial name="_StatusBadge" model="@StatusBadge.For(rotation.Status)" />
+                        <a href="@Url.Content("~" + Routes.Job(rotation.Id))">@(rotation.Status is JobStatus.Pending or JobStatus.Running ? "Follow the rotation" : "Open the job")</a>
+                        @if (credential.Result is { State: CredentialResultState.Available } result && result.JobId == rotation.Id)
+                        {
+                            <span class="muted">Its new password has not been retrieved yet. It can be shown once, from the job.</span>
+                        }
+                    </dd>
+                }
+            </dl>
         </div>
     </div>
 </section>

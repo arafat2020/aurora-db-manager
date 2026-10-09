@@ -26,6 +26,9 @@ public static class ExternalAccessErrors
         ExternalAccessStatus.RestoreInProgress => Conflict(
             ErrorCodes.RestoreOperationInProgress,
             "External access cannot be changed while one of the instance's databases is being restored."),
+        ExternalAccessStatus.CredentialRotationInProgress => Conflict(
+            ErrorCodes.CredentialRotationInProgress,
+            "External access cannot be changed while the instance's database password is being rotated."),
         ExternalAccessStatus.PortAllocationFailed => Conflict(
             result.ErrorCode ?? ErrorCodes.PortAllocationFailed,
             result.ErrorMessage ?? "No free host port could be allocated in the configured port range."),

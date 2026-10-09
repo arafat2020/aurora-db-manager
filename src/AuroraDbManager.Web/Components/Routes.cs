@@ -21,6 +21,10 @@ public static class Routes
 
     public static string ExternalAccess(Guid id) => $"{Instance(id)}/external-access";
 
+    public static string RotatePassword(Guid id) => $"{Instance(id)}/rotate-password";
+
+    public static string RotatePasswordResult(Guid id, Guid jobId) => $"{RotatePassword(id)}/{jobId:D}/result";
+
     public static string Databases(Guid instanceId) => $"{Instance(instanceId)}/databases";
 
     public static string CreateDatabase(Guid instanceId) => $"{Databases(instanceId)}/create";

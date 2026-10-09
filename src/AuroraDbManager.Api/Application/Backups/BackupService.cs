@@ -105,6 +105,11 @@ public sealed class BackupService(
         }
 
         var instanceId = await db.Databases.Where(d => d.Id == databaseId).Select(d => d.InstanceId).FirstAsync(cancellationToken);
+        if (await db.CredentialRotationUnfinishedAsync(instanceId, cancellationToken))
+        {
+            return new PreparedBackup(CreateBackupStatus.CredentialRotationInProgress);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // For the server's default storage; from here on the backup's own record says where it is.
@@ -200,5 +205,7 @@ public enum CreateBackupStatus
     BackupInProgress,
 
     /// <summary>Not accepted because the database is being restored.</summary>
-    RestoreInProgress
+    RestoreInProgress,
+    /// <summary>Not accepted because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress
 }

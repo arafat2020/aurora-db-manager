@@ -1,5 +1,6 @@
 @page "/jobs/{id:guid}"
 @model AuroraDbManager.Web.Pages.Jobs.DetailsModel
+@using AuroraDbManager.Api.Application.Credentials
 @using AuroraDbManager.Api.Domain.Jobs
 @{
     var job = Model.Job;
@@ -15,6 +16,56 @@
 @if (Model.InProgress)
 {
     <partial name="_InProgress" model="@Routes.Job(job.Id)" />
+}
+
+@if (job.Type == JobType.RotateCredential)
+{
+    @* What a rotation's outcome means for whoever connects. Never the password, which this page does not have. *@
+    <partial name="_Alert" model="@(job.Status switch
+    {
+        JobStatus.Completed => new Alert(StatusTone.Success, "The database administrator has a new password, which Aurora has stored and uses. The previous password no longer works.", "The password was rotated"),
+        JobStatus.Failed => new Alert(StatusTone.Warning, "The rotation did not finish. Aurora keeps the password it generated; rotating the password again from the instance's page continues with it.", "The password was not rotated"),
+        _ => new Alert(StatusTone.Progress, "Aurora is replacing the database administrator's password. Once it has, the new password can be shown here, once.", "The password is being rotated")
+    })" />
+
+    @if (job.Status == JobStatus.Completed)
+    {
+        <section class="section" aria-labelledby="credential-result-title">
+            <div class="section-header">
+                <h2 id="credential-result-title">New password</h2>
+            </div>
+            <div class="card">
+                <div class="card-body stack">
+                    @switch (Model.CredentialResult)
+                    {
+                        case CredentialResultState.Available when User.IsOperator():
+                            <p>The new password can be shown <strong>once</strong>. After that Aurora will not display it again, to anyone. Be ready to store it before you ask for it.</p>
+                            <form method="post" action="@Url.Content("~" + Routes.RotatePasswordResult(job.InstanceId, job.Id))" class="form">
+                                @Html.AntiForgeryToken()
+                                <div class="form-actions">
+                                    <button type="submit" class="button button-primary" data-busy-label="Retrieving…">Show the new password</button>
+                                </div>
+                            </form>
+                            break;
+                        case CredentialResultState.Available:
+                            <p class="muted">The new password is available, once, to an operator or an administrator.</p>
+                            break;
+                        case CredentialResultState.Retrieved:
+                            <p>Credential already retrieved. It cannot be displayed again.</p>
+                            <p class="muted">If it was lost, rotate the password again from the instance's page.</p>
+                            break;
+                        case CredentialResultState.Expired:
+                            <p>The time in which the new password could be shown has passed. It cannot be displayed any more.</p>
+                            <p class="muted">The password itself still works for Aurora. To get one you can use, rotate the password again from the instance's page.</p>
+                            break;
+                        default:
+                            <p class="muted">This rotation's password can no longer be shown: the password has been rotated again since.</p>
+                            break;
+                    }
+                </div>
+            </div>
+        </section>
+    }
 }
 
 @if (job.Error is not null)

@@ -73,7 +73,7 @@ public sealed partial class UiPolishTests : IDisposable
         var backup = $"{database}/backups/{backupId}";
         return
         [
-            "/", "/instances", "/instances/create", instance, $"{instance}/delete", $"{instance}/external-access",
+            "/", "/instances", "/instances/create", instance, $"{instance}/delete", $"{instance}/external-access", $"{instance}/rotate-password",
             $"{instance}/databases", $"{instance}/databases/create", database, $"{database}/delete",
             $"{database}/backups", $"{database}/backups/create", backup, $"{backup}/restore",
             $"{database}/schedule", $"{database}/schedule/edit", $"{database}/schedule/delete",
@@ -246,7 +246,7 @@ public sealed partial class UiPolishTests : IDisposable
     {
         var pages = await SeededPagesAsync();
         var viewer = await SignedInAsync("viewer");
-        string[] changing = ["/create", "/delete", "/edit", "/restore", "/external-access"];
+        string[] changing = ["/create", "/delete", "/edit", "/restore", "/external-access", "/rotate-password"];
 
         foreach (var path in pages)
         {

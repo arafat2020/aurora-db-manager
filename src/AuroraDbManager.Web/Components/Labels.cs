@@ -16,6 +16,7 @@ public static class Labels
         JobType.DeleteDatabase => "Delete database",
         JobType.BackupDatabase => "Back up database",
         JobType.RestoreDatabase => "Restore database",
+        JobType.RotateCredential => "Rotate password",
         _ => type.ToString()
     };
 

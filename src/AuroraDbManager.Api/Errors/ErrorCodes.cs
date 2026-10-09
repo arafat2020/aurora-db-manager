@@ -9,6 +9,11 @@ public static class ErrorCodes
     public const string ExternalAccessAlreadyEnabled = "EXTERNAL_ACCESS_ALREADY_ENABLED";
     public const string ExternalAccessAlreadyDisabled = "EXTERNAL_ACCESS_ALREADY_DISABLED";
     public const string PortAllocationFailed = "PORT_ALLOCATION_FAILED";
+    public const string CredentialNotManaged = "CREDENTIAL_NOT_MANAGED";
+    public const string CredentialResultNotAvailable = "CREDENTIAL_RESULT_NOT_AVAILABLE";
+    public const string CredentialResultAlreadyRetrieved = "CREDENTIAL_RESULT_ALREADY_RETRIEVED";
+    public const string CredentialResultExpired = "CREDENTIAL_RESULT_EXPIRED";
+    public const string CredentialRotationInProgress = "CREDENTIAL_ROTATION_IN_PROGRESS";
     public const string DatabaseNotFound = "DATABASE_NOT_FOUND";
     public const string DatabaseNameInvalid = "DATABASE_NAME_INVALID";
     public const string DatabaseAlreadyExists = "DATABASE_ALREADY_EXISTS";

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.Connectivity;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.BackupSchedules;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
@@ -12,6 +13,7 @@ using AuroraDbManager.Api.Application.Jobs.CreateDatabase;
 using AuroraDbManager.Api.Application.Jobs.DeleteDatabase;
 using AuroraDbManager.Api.Application.Jobs.ProvisionInstance;
 using AuroraDbManager.Api.Application.Jobs.RestoreDatabase;
+using AuroraDbManager.Api.Application.Jobs.RotateCredential;
 using AuroraDbManager.Api.Application.Monitoring;
 using AuroraDbManager.Api.Application.Restores;
 using AuroraDbManager.Api.Application.Users;
@@ -81,6 +83,7 @@ public static class AuroraHost
         services.AddScoped<IJobHandler, DeleteDatabaseHandler>();
         services.AddScoped<IJobHandler, BackupDatabaseHandler>();
         services.AddScoped<IJobHandler, RestoreDatabaseHandler>();
+        services.AddScoped<IJobHandler, RotateCredentialHandler>();
 
         services.AddOptions<DockerOptions>()
             .Bind(configuration.GetSection(DockerOptions.SectionName))
@@ -109,6 +112,15 @@ public static class AuroraHost
         services.AddSingleton<IInstanceEndpointResolver, DockerInstanceEndpointResolver>();
         services.AddScoped<IDatabaseManager, PostgreSqlDatabaseManager>();
         services.AddScoped<IDatabaseManager, MySqlDatabaseManager>();
+
+        // Rotating an instance's administrator password: the same managers, asked to change and check it.
+        services.AddScoped<IAdminCredentialManager, PostgreSqlDatabaseManager>();
+        services.AddScoped<IAdminCredentialManager, MySqlDatabaseManager>();
+        services.AddOptions<CredentialOptions>()
+            .Bind(configuration.GetSection(CredentialOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddScoped<CredentialRotationService>();
 
         // Backups run the engines' dump programs on this machine and keep the artifacts on its filesystem.
         services.AddOptions<BackupOptions>()

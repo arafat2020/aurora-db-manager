@@ -1,6 +1,7 @@
 using AuroraDbManager.Api.Application.Auth;
 using AuroraDbManager.Api.Application.Backups;
 using AuroraDbManager.Api.Application.BackupSchedules;
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
@@ -11,7 +12,9 @@ using AuroraDbManager.Api.Infrastructure.Backups;
 using AuroraDbManager.Api.Infrastructure.Backups.S3;
 using AuroraDbManager.Api.Infrastructure.Docker;
 using AuroraDbManager.Api.Infrastructure.Persistence;
+using AuroraDbManager.Api.Infrastructure.Secrets;
 using AuroraDbManager.Api.Tests.Backups;
+using AuroraDbManager.Api.Tests.Credentials;
 using AuroraDbManager.Api.Tests.Databases;
 using AuroraDbManager.Api.Tests.Docker;
 using Microsoft.AspNetCore.Builder;
@@ -171,6 +174,12 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
 
     public FakeDatabaseServers DatabaseServers { get; } = new();
 
+    /// <summary>What every instance's database server accepts as its administrator's password. Unused with real Docker.</summary>
+    public FakeAdminCredentials AdminCredentials { get; } = new();
+
+    /// <summary>The real secret store's faults, for a test to inject.</summary>
+    public SecretStoreFaults SecretFaults { get; } = new();
+
     public FakeDumpTools DumpTools { get; } = new();
 
     public FakeInstanceEndpoints Endpoints { get; } = new();
@@ -225,6 +234,9 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
 
     /// <summary>Changes the Docker settings after the test defaults were applied, the readiness timeout for instance.</summary>
     public Action<DockerOptions>? ConfigureDocker { get; init; }
+
+    /// <summary>For how long a rotated password can be retrieved; the application's default if not set.</summary>
+    public int? CredentialResultTtlMinutes { get; init; }
 
     /// <summary>Changes the backup settings after the test defaults were applied.</summary>
     public Action<BackupOptions>? ConfigureBackups { get; init; }
@@ -305,6 +317,9 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
         var (instanceId, jobId) = await client.CreateInstanceAsync(name: name, engine: engine);
         await ProcessJobAsync(jobId);
         Assert.Equal("running", (await client.GetInstanceAsync(instanceId)).Status());
+        // The real provisioner gives the server a password from the secret store; the fake one
+        // creates no server, so the password it would have been given is put there here.
+        await AdminPasswordAsync(instanceId);
         return instanceId;
     }
 
@@ -331,6 +346,26 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
         WithDbAsync(db => db.Instances
             .Where(i => i.Id == instanceId)
             .ExecuteUpdateAsync(setters => setters.SetProperty(i => i.Status, status)));
+
+    /// <summary>The replacement password a rotation has stored for an instance, or null.</summary>
+    public async Task<string?> AdminPasswordReplacementAsync(Guid instanceId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IInstanceSecretStore>()
+            .GetAdminPasswordReplacementAsync(instanceId, default);
+    }
+
+    /// <summary>Asks for a rotation of an instance's administrator password and returns the id of its job.</summary>
+    public static async Task<Guid> RequestRotationAsync(HttpClient client, Guid instanceId)
+    {
+        var response = await client.PostAsync($"{ApiClientExtensions.InstancesUrl}/{instanceId}/credentials/rotate", content: null);
+        var body = await response.ReadJsonAsync(System.Net.HttpStatusCode.Accepted);
+        return body.GetProperty("job").GetProperty("id").GetGuid();
+    }
+
+    /// <summary>The address the new password of a completed rotation is retrieved from, once.</summary>
+    public static string RotationResultUrl(Guid instanceId, Guid jobId) =>
+        $"{ApiClientExtensions.InstancesUrl}/{instanceId}/credentials/rotate/{jobId}/result";
 
     public Task<Job> GetJobEntityAsync(Guid jobId) =>
         WithDbAsync(db => db.Jobs.AsNoTracking().SingleAsync(j => j.Id == jobId));
@@ -441,7 +476,23 @@ public class TestHostFactory<TProgram> : WebApplicationFactory<TProgram>
                 services.RemoveAll<IDatabaseManager>();
                 services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Postgres));
                 services.AddSingleton(DatabaseServers.ManagerFor(InstanceEngine.Mysql));
+
+                AdminCredentials.ProvisionedPassword = AdminPasswordAsync;
+                services.RemoveAll<IAdminCredentialManager>();
+                services.AddSingleton(AdminCredentials.ManagerFor(InstanceEngine.Postgres));
+                services.AddSingleton(AdminCredentials.ManagerFor(InstanceEngine.Mysql));
             }
+
+            if (CredentialResultTtlMinutes is { } ttl)
+            {
+                services.Configure<CredentialOptions>(options => options.ResultTtlMinutes = ttl);
+            }
+
+            // The real store, behind something a test can make fail.
+            services.RemoveAll<IInstanceSecretStore>();
+            services.AddScoped<ProtectedInstanceSecretStore>();
+            services.AddScoped<IInstanceSecretStore>(provider => new FaultInjectingSecretStore(
+                provider.GetRequiredService<ProtectedInstanceSecretStore>(), SecretFaults));
 
             if (Clock is not null)
             {

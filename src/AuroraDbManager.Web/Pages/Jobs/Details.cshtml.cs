@@ -1,3 +1,4 @@
+using AuroraDbManager.Api.Application.Credentials;
 using AuroraDbManager.Api.Application.Databases;
 using AuroraDbManager.Api.Application.Instances;
 using AuroraDbManager.Api.Application.Jobs;
@@ -13,13 +14,19 @@ namespace AuroraDbManager.Web.Pages.Jobs;
 /// named by asking the services that have it; a database that has since been deleted is simply
 /// not named.
 /// </summary>
-public sealed class DetailsModel(JobService jobs, InstanceService instances, DatabaseService databases) : ResourcePageModel
+public sealed class DetailsModel(JobService jobs, InstanceService instances, DatabaseService databases, CredentialRotationService credentials) : ResourcePageModel
 {
     public JobResponse Job { get; private set; } = null!;
 
     public InstanceResponse? Instance { get; private set; }
 
     public DatabaseResponse? Database { get; private set; }
+
+    /// <summary>
+    /// For a rotation: whether its new password can still be retrieved. Where it stands and never
+    /// the password, which this page does not have.
+    /// </summary>
+    public CredentialResultState? CredentialResult { get; private set; }
 
     public bool InProgress => Job.Status is JobStatus.Pending or JobStatus.Running;
 
@@ -33,6 +40,9 @@ public sealed class DetailsModel(JobService jobs, InstanceService instances, Dat
         Job = job;
         Instance = await instances.GetAsync(job.InstanceId, cancellationToken);
         Database = job.DatabaseId is { } databaseId ? await databases.GetAsync(databaseId, cancellationToken) : null;
+        CredentialResult = job.Type == JobType.RotateCredential
+            ? await credentials.GetResultStateAsync(job.InstanceId, job.Id, cancellationToken)
+            : null;
         return Page();
     }
 }

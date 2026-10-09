@@ -187,6 +187,11 @@ public sealed class InstanceConnectivityService(
             .Where(j => j.InstanceId == instance.Id && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running))
             .Select(j => j.Type)
             .ToListAsync(cancellationToken);
+        if (unfinished.Contains(JobType.RotateCredential))
+        {
+            return new ExternalAccessResult(ExternalAccessStatus.CredentialRotationInProgress);
+        }
+
         if (unfinished.Contains(JobType.BackupDatabase))
         {
             return new ExternalAccessResult(ExternalAccessStatus.BackupInProgress);
@@ -322,6 +327,9 @@ public enum ExternalAccessStatus
 
     /// <summary>Not changed because one of the instance's databases is being restored.</summary>
     RestoreInProgress,
+
+    /// <summary>Not changed because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress,
 
     /// <summary>No host port of the configured range could be had.</summary>
     PortAllocationFailed,

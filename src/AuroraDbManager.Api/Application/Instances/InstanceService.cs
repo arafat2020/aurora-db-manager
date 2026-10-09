@@ -75,7 +75,7 @@ public sealed class InstanceService(
     /// Deletes an instance together with its database server and data. An instance that is still
     /// provisioning is not deleted: its job may be creating resources at this very moment, and
     /// removing the metadata would leave them behind with nothing pointing to them. Nor is one with
-    /// a database being created, deleted, backed up or restored: that job is working inside the server right now.
+    /// a database being created, deleted, backed up or restored, or whose password is being rotated: that job is working inside the server right now.
     /// </summary>
     /// <remarks>
     /// The instance's databases are not dropped one by one. They live in the instance's data
@@ -96,6 +96,12 @@ public sealed class InstanceService(
         if (instance.Status == InstanceStatus.Provisioning)
         {
             return DeleteInstanceResult.Provisioning;
+        }
+
+        // The job would lose the server it is changing the password of, and its record with it.
+        if (await db.CredentialRotationUnfinishedAsync(id, cancellationToken))
+        {
+            return DeleteInstanceResult.CredentialRotationInProgress;
         }
 
         var unfinishedDatabaseJobTypes = await db.Jobs
@@ -146,5 +152,8 @@ public enum DeleteInstanceResult
     BackupInProgress,
 
     /// <summary>Not deleted because one of the instance's databases is being restored.</summary>
-    RestoreInProgress
+    RestoreInProgress,
+
+    /// <summary>Not deleted because the password of the instance's database administrator is being rotated.</summary>
+    CredentialRotationInProgress
 }

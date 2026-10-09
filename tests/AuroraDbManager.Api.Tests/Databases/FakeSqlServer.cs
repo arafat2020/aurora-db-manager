@@ -25,6 +25,12 @@ public sealed class FakeSqlServer(char identifierQuote, bool permissive = false)
     /// <summary>Every statement executed, in order.</summary>
     public List<string> Statements { get; } = [];
 
+    /// <summary>The parameters of every command executed, by name, in the order of <see cref="Statements"/>.</summary>
+    public List<IReadOnlyDictionary<string, object?>> Parameters { get; } = [];
+
+    /// <summary>What a query read row by row returns: the values of its single column. Nothing by default.</summary>
+    public Func<string, IReadOnlyList<string>> Rows { get; set; } = _ => [];
+
     public List<string> ConnectionStrings { get; } = [];
 
     public int OpenConnections { get; private set; }
@@ -214,6 +220,7 @@ public sealed class FakeSqlServer(char identifierQuote, bool permissive = false)
         public override int ExecuteNonQuery()
         {
             EnsureOpen();
+            server.Parameters.Add(_parameters.Items.ToDictionary(parameter => parameter.ParameterName, parameter => parameter.Value));
             server.Execute(CommandText);
             return 0;
         }
@@ -221,6 +228,7 @@ public sealed class FakeSqlServer(char identifierQuote, bool permissive = false)
         public override object? ExecuteScalar()
         {
             EnsureOpen();
+            server.Parameters.Add(_parameters.Items.ToDictionary(parameter => parameter.ParameterName, parameter => parameter.Value));
             return server.Query(CommandText, _parameters.Items);
         }
 
@@ -238,7 +246,21 @@ public sealed class FakeSqlServer(char identifierQuote, bool permissive = false)
 
         protected override DbParameter CreateDbParameter() => new Parameter();
 
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => throw new NotSupportedException();
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
+            EnsureOpen();
+            server.Parameters.Add(_parameters.Items.ToDictionary(parameter => parameter.ParameterName, parameter => parameter.Value));
+            server.Run(CommandText);
+
+            var table = new DataTable();
+            table.Columns.Add("value", typeof(string));
+            foreach (var value in server.Rows(CommandText))
+            {
+                table.Rows.Add(value);
+            }
+
+            return table.CreateDataReader();
+        }
 
         private void EnsureOpen() => Assert.Equal(ConnectionState.Open, connection.State);
     }

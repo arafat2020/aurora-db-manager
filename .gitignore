@@ -4,7 +4,6 @@
 ## Get latest from `dotnet new gitignore`
 
 # dotenv files
-.env
 
 # User-specific files
 *.rsuser
@@ -385,11 +384,6 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # VS Code files for those working on multiple tools
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
 *.code-workspace
 
 # Local History for Visual Studio Code
@@ -490,3 +484,7 @@ $RECYCLE.BIN/
 !src/**/BackupSchedules/
 !src/**/BackupDatabase/
 !tests/**/Backups/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat

@@ -484,7 +484,4 @@ $RECYCLE.BIN/
 !src/**/BackupSchedules/
 !src/**/BackupDatabase/
 !tests/**/Backups/
-branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
 config.bat
